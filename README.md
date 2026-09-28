@@ -47,6 +47,12 @@ cargo run --release
 
 eframe draws with OpenGL and works on both X11 and Wayland.
 
+To install it with a launcher entry and icon for your user:
+
+```sh
+scripts/install-desktop.sh            # -h for options, --uninstall to remove
+```
+
 ## Development
 
 ```sh

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Deterministic Minesweeper
+Comment=Minesweeper where luck never decides the game
+Exec=minesweeper-deterministic
+Icon=minesweeper-deterministic
+Categories=Game;LogicGame;
+Terminal=false
