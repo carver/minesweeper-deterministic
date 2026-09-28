@@ -69,7 +69,7 @@ pub struct CellInfo {
     /// Highlighted because the player missed it when asking for help.
     pub missed: bool,
     /// Opened with granted help.
-    pub magic: bool,
+    pub opened_by_help: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -89,9 +89,9 @@ pub struct Game {
     first_reveal: bool,
     schedule: Schedule<Task>,
     /// Help was granted: the next square the player opens is safe to open.
-    wand: bool,
+    help_granted: bool,
     missed: Vec<bool>,
-    magic: Vec<bool>,
+    opened_by_help: Vec<bool>,
     exploded: Option<Pos>,
     /// Bumped on every change to the visible board, so stale help answers
     /// can be recognised.
@@ -121,9 +121,9 @@ impl Game {
             status: Status::Playing,
             first_reveal: true,
             schedule: Schedule::default(),
-            wand: false,
+            help_granted: false,
             missed: vec![false; dims.area()],
-            magic: vec![false; dims.area()],
+            opened_by_help: vec![false; dims.area()],
             exploded: None,
             revision: 0,
             events: Vec::new(),
@@ -172,7 +172,7 @@ impl Game {
     }
 
     pub fn help_granted(&self) -> bool {
-        self.wand
+        self.help_granted
     }
 
     /// Automation is still rippling out.
@@ -189,7 +189,7 @@ impl Game {
         CellInfo {
             look: self.look(pos),
             missed: self.missed[i],
-            magic: self.magic[i],
+            opened_by_help: self.opened_by_help[i],
         }
     }
 
@@ -241,7 +241,7 @@ impl Game {
             return;
         }
         match self.board.view(pos) {
-            View::Hidden => self.reveal(pos, self.wand),
+            View::Hidden => self.reveal(pos, self.help_granted),
             View::Revealed(n) if self.board.flagged_neighbours(pos) == usize::from(n) => {
                 self.schedule_around(pos, Task::Reveal)
             }
@@ -252,7 +252,7 @@ impl Game {
     pub fn toggle_flag(&mut self, pos: Pos) {
         self.record(Event::PlayerToggledFlag(pos));
         let i = self.dims().index(pos);
-        if self.status != Status::Playing || self.magic[i] {
+        if self.status != Status::Playing || self.opened_by_help[i] {
             return;
         }
         let flagged = match self.board.view(pos) {
@@ -285,22 +285,25 @@ impl Game {
         }
     }
 
-    fn reveal(&mut self, pos: Pos, with_wand: bool) {
+    fn reveal(&mut self, pos: Pos, with_help: bool) {
         if self.board.view(pos) != View::Hidden {
             return;
         }
-        if std::mem::take(&mut self.first_reveal) && self.board.is_mine(pos) {
+        let first = std::mem::take(&mut self.first_reveal);
+        if first && self.board.is_mine(pos) {
             let to = self.board.relocate_mine(pos, &mut self.rng);
             self.record(Event::MineMoved { from: pos, to });
         }
-        if with_wand {
-            self.wand = false;
+        // The first square is safe anyway, so granted help is kept for later.
+        let with_help = with_help && !first;
+        if with_help {
+            self.help_granted = false;
             let i = self.dims().index(pos);
-            self.magic[i] = true;
+            self.opened_by_help[i] = true;
             self.record(Event::HelpUsed(pos));
         }
         if self.board.is_mine(pos) {
-            if with_wand {
+            if with_help {
                 self.set_flag(pos, true);
             } else {
                 self.lose(Some(pos));
@@ -393,7 +396,7 @@ impl Game {
 
     fn end(&mut self) {
         self.schedule.clear();
-        self.wand = false;
+        self.help_granted = false;
         self.revision += 1;
     }
 }

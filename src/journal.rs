@@ -1,6 +1,6 @@
 //! Appends game events to one text file per day, so a bad game can be
 //! looked at afterwards. Files older than [`KEEP_DAYS`] are deleted when a
-//! journal opens.
+//! journal opens and whenever it starts a new day's file.
 //!
 //! Lines look like `21:50:03.120 +1520ms player clicked (4,7)`: UTC wall
 //! time, then the game's own clock. A `new game` line lists every mine, so
@@ -36,7 +36,7 @@ impl Journal {
     /// Creates the directory if needed and prunes old files.
     pub fn open(dir: PathBuf, now: SystemTime) -> io::Result<Self> {
         fs::create_dir_all(&dir)?;
-        prune(&dir, Date::of(now))?;
+        prune(&dir, Date::of(now));
         Ok(Self { dir, open: None })
     }
 
@@ -59,6 +59,7 @@ impl Journal {
 
     fn file_for(&mut self, today: Date) -> io::Result<&mut BufWriter<File>> {
         if self.open.as_ref().is_none_or(|(date, _)| *date != today) {
+            prune(&self.dir, today);
             let path = self.dir.join(file_name(today));
             let file = OpenOptions::new().create(true).append(true).open(path)?;
             self.open = Some((today, BufWriter::new(file)));
@@ -72,19 +73,27 @@ fn file_name(date: Date) -> String {
 }
 
 /// Deletes journal files dated more than [`KEEP_DAYS`] before `today`.
-/// Other files are left alone.
-fn prune(dir: &Path, today: Date) -> io::Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
+/// Other files are left alone. Failures are reported and skipped: an old
+/// file that will not go away is no reason to stop journaling.
+fn prune(dir: &Path, today: Date) {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            eprintln!("journal: cannot list {}: {e}", dir.display());
+            return;
+        }
+    };
+    for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(date) = name.to_str().and_then(parse_file_name) else {
             continue;
         };
-        if today.days - date.days > KEEP_DAYS {
-            fs::remove_file(entry.path())?;
+        if today.days - date.days > KEEP_DAYS
+            && let Err(e) = fs::remove_file(entry.path())
+        {
+            eprintln!("journal: cannot delete {}: {e}", entry.path().display());
         }
     }
-    Ok(())
 }
 
 fn parse_file_name(name: &str) -> Option<Date> {

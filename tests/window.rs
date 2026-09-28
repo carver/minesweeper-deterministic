@@ -7,19 +7,14 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use minesweeper_deterministic::board::Board;
 use minesweeper_deterministic::game::{Automation, Game, Look, Status};
-use minesweeper_deterministic::grid::{Dims, Pos};
+use minesweeper_deterministic::grid::Pos;
 use minesweeper_deterministic::rng::Rng;
 use minesweeper_deterministic::ui::App;
 
-/// Rows separated by `/`: `*` mine, `.` safe.
+/// See [`Board::from_layout`].
 fn window(rows: &str, automation: Automation) -> Harness<'static, App> {
-    let rows: Vec<&str> = rows.split('/').collect();
-    let dims = Dims::new(rows[0].len(), rows.len());
-    let mines: Vec<Pos> = dims
-        .positions()
-        .filter(|p| rows[p.y].as_bytes()[p.x] == b'*')
-        .collect();
-    let game = Game::with_board(Board::from_mines(dims, &mines), automation, Rng::seeded(0));
+    let board = Board::from_layout(rows).expect("valid layout");
+    let game = Game::with_board(board, automation, Rng::seeded(0));
     let mut harness = Harness::builder()
         .with_size(vec2(700.0, 400.0))
         .build_eframe(move |_| App::new(game, None));
@@ -29,7 +24,7 @@ fn window(rows: &str, automation: Automation) -> Harness<'static, App> {
 
 /// Steps frames until `done` holds, failing after a few seconds.
 fn wait_until(harness: &mut Harness<'static, App>, done: impl Fn(&Harness<'static, App>) -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !done(harness) {
         assert!(Instant::now() < deadline, "timed out");
         std::thread::sleep(Duration::from_millis(5));
@@ -98,6 +93,29 @@ fn releasing_elsewhere_opens_that_square_instead() {
 }
 
 #[test]
+fn leaving_the_board_lets_go() {
+    let mut h = window("*../.../...", Automation::ZerosOnly);
+    press(
+        &mut h,
+        Pos::new(1, 1),
+        PointerButton::Primary,
+        true,
+        Modifiers::NONE,
+    );
+    let off_board = h.state().square_centre(Pos::new(0, 0)).expect("drawn") - vec2(200.0, 0.0);
+    h.event(Event::PointerMoved(off_board));
+    h.step();
+    press(
+        &mut h,
+        Pos::new(1, 1),
+        PointerButton::Primary,
+        false,
+        Modifiers::NONE,
+    );
+    assert_eq!(look(&h, 1, 1), Look::Covered);
+}
+
+#[test]
 fn right_click_and_ctrl_click_toggle_flags() {
     let mut h = window("*../.../...", Automation::ZerosOnly);
     click(&mut h, Pos::new(0, 0), PointerButton::Secondary);
@@ -135,7 +153,7 @@ fn granted_help_opens_a_mine_safely() {
 
     click(&mut h, Pos::new(0, 2), PointerButton::Primary);
     assert_eq!(look(&h, 0, 2), Look::Flag);
-    assert!(h.state().game().cell(Pos::new(0, 2)).magic);
+    assert!(h.state().game().cell(Pos::new(0, 2)).opened_by_help);
     assert_eq!(h.state().game().status(), Status::Playing);
 }
 

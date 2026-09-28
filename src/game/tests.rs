@@ -4,21 +4,10 @@ use super::*;
 use crate::rng::Rng;
 use crate::solver::Solution;
 
-/// Rows separated by `/`: `*` mine, `.` safe.
+/// See [`Board::from_layout`].
 fn game(rows: &str, automation: Automation) -> Game {
-    let rows: Vec<&str> = rows.split('/').collect();
-    let dims = Dims::new(rows[0].len(), rows.len());
-    let mines: Vec<Pos> = rows
-        .iter()
-        .enumerate()
-        .flat_map(|(y, r)| {
-            r.chars()
-                .enumerate()
-                .filter(|&(_, c)| c == '*')
-                .map(move |(x, _)| Pos::new(x, y))
-        })
-        .collect();
-    Game::with_board(Board::from_mines(dims, &mines), automation, Rng::seeded(0))
+    let board = Board::from_layout(rows).expect("valid layout");
+    Game::with_board(board, automation, Rng::seeded(0))
 }
 
 /// Two 1s over a pair of squares, one of them a mine: a true guess.
@@ -164,7 +153,7 @@ fn granted_help_opens_a_mine_safely_once() {
     click(&mut g, 0, 2);
     assert_eq!(g.status(), Status::Playing);
     assert_eq!(look(&g, 0, 2), Look::Flag);
-    assert!(g.cell(p(0, 2)).magic);
+    assert!(g.cell(p(0, 2)).opened_by_help);
     assert!(!g.help_granted());
 
     g.toggle_flag(p(0, 2));
@@ -172,14 +161,23 @@ fn granted_help_opens_a_mine_safely_once() {
 }
 
 #[test]
-fn granted_help_marks_a_safe_square_as_magic() {
+fn granted_help_marks_the_safe_square_it_opened() {
     let mut g = game(GUESS, Automation::ZerosOnly);
     click(&mut g, 0, 0);
     g.request_help_blocking();
     click(&mut g, 1, 2);
     assert_eq!(look(&g, 1, 2), Look::Number(1));
-    assert!(g.cell(p(1, 2)).magic);
+    assert!(g.cell(p(1, 2)).opened_by_help);
     assert_eq!(g.status(), Status::Won);
+}
+
+#[test]
+fn first_square_keeps_granted_help() {
+    let mut g = game("*../...", Automation::ZerosOnly);
+    assert_eq!(g.request_help_blocking(), Some(HelpVerdict::Granted));
+    click(&mut g, 0, 0);
+    assert!(g.help_granted());
+    assert!(!g.cell(p(0, 0)).opened_by_help);
 }
 
 #[test]

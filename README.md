@@ -56,7 +56,8 @@ scripts/install-desktop.sh            # -h for options, --uninstall to remove
 ## Development
 
 ```sh
-git config core.hooksPath .githooks   # fmt + clippy before each commit
+git config core.hooksPath .githooks   # rustfmt check before each commit
+cargo clippy --all-targets -- -D warnings
 cargo test                            # CI runs this with --release
 cargo run --release --example solver_stress -- 200 40   # solver timing
 ```

@@ -16,7 +16,7 @@ const MINE: Color32 = Color32::BLACK;
 const EXPLODED: Color32 = Color32::from_rgb(0xff, 0x00, 0x00);
 const FLAG: Color32 = Color32::from_rgb(0xff, 0x00, 0x00);
 const MISSED_TINT: Color32 = Color32::from_rgba_premultiplied(77, 0, 0, 77);
-const MAGIC_TINT: Color32 = Color32::from_rgba_premultiplied(77, 77, 0, 77);
+const HELP_TINT: Color32 = Color32::from_rgba_premultiplied(77, 77, 0, 77);
 
 const NUMBER_COLOURS: [Color32; 8] = [
     Color32::from_rgb(0x00, 0x00, 0xff),
@@ -60,8 +60,8 @@ pub fn cell(painter: &Painter, rect: Rect, info: CellInfo, pressed: bool) {
     if info.missed {
         painter.rect_filled(rect, 0.0, MISSED_TINT);
     }
-    if info.magic {
-        painter.rect_filled(rect, 0.0, MAGIC_TINT);
+    if info.opened_by_help {
+        painter.rect_filled(rect, 0.0, HELP_TINT);
     }
 }
 

@@ -124,6 +124,22 @@ fn writes_timestamped_lines_and_rolls_over_at_midnight() {
 }
 
 #[test]
+fn a_new_day_prunes_again() {
+    let tmp = TempDir::new();
+    let start = day(2026, 9, 1);
+    let mut journal = Journal::open(tmp.0.clone(), at_day(start, 0)).expect("open");
+    let event = [Timed {
+        at: 0,
+        event: Event::Won,
+    }];
+    journal.write(at_day(start, 0), &event).expect("write");
+    journal
+        .write(at_day(start + KEEP_DAYS + 1, 0), &event)
+        .expect("write");
+    assert_eq!(files(&tmp.0), ["journal-2026-10-02.log"]);
+}
+
+#[test]
 fn nothing_to_write_creates_no_file() {
     let tmp = TempDir::new();
     let mut journal = Journal::open(tmp.0.clone(), at_day(0, 0)).expect("open");

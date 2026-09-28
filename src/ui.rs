@@ -7,8 +7,8 @@ use std::time::{Instant, SystemTime};
 
 use eframe::egui::{self, Color32, CursorIcon, PointerButton, Rect, Sense, Stroke, StrokeKind, Ui, vec2};
 
-use crate::game::{Automation, Config, Game, HelpStart, Look, Status};
-use crate::grid::Pos;
+use crate::game::{Automation, Config, Game, HelpStart, Status};
+use crate::grid::{Dims, Pos};
 use crate::journal::Journal;
 use crate::rng::Rng;
 use help_task::HelpTask;
@@ -24,14 +24,14 @@ pub struct App {
     game: Game,
     /// Zero on the game's automation clock.
     started: Instant,
-    /// The square under a held primary or middle button, if any. `Some(None)`
-    /// means held but off the board's squares.
-    held: Option<Option<Pos>>,
+    /// The square under a held primary or middle button. Leaving the board
+    /// lets go, as in the original.
+    held: Option<Pos>,
     help: Option<HelpTask>,
     /// `None` if it could not be opened or a write failed.
     journal: Option<Journal>,
-    /// Where the squares were last drawn, and their size.
-    grid: Option<(Rect, f32)>,
+    /// Where the squares were last drawn.
+    grid: Option<GridLayout>,
 }
 
 impl Default for App {
@@ -95,8 +95,7 @@ impl App {
 
     /// The centre of a square as last drawn, for driving the window in tests.
     pub fn square_centre(&self, pos: Pos) -> Option<egui::Pos2> {
-        let (grid, side) = self.grid?;
-        Some(grid.min + vec2((pos.x as f32 + 0.5) * side, (pos.y as f32 + 0.5) * side))
+        Some(self.grid?.square(pos).center())
     }
 
     fn clock(&self) -> u64 {
@@ -193,7 +192,8 @@ impl App {
             }
             if self.working() {
                 ui.label("working");
-            } else if self.game.help_granted() {
+            }
+            if self.game.help_granted() {
                 ui.label(egui::RichText::new("Granted!").strong());
             }
         });
@@ -222,22 +222,19 @@ impl App {
             .min(fit(available.height(), dims.height))
             .floor()
             .clamp(MIN_SQUARE, MAX_SQUARE);
-        let grid_size = vec2(side * dims.width as f32, side * dims.height as f32);
         let (area, _) = ui.allocate_exact_size(available.size(), Sense::click_and_drag());
-        let grid = Rect::from_center_size(area.center(), grid_size);
-        self.grid = Some((grid, side));
-
-        let square_at = |p: egui::Pos2| {
-            grid.contains(p).then(|| {
-                let x = ((p.x - grid.min.x) / side) as usize;
-                let y = ((p.y - grid.min.y) / side) as usize;
-                Pos::new(x.min(dims.width - 1), y.min(dims.height - 1))
-            })
+        let grid = GridLayout {
+            rect: Rect::from_center_size(
+                area.center(),
+                vec2(side * dims.width as f32, side * dims.height as f32),
+            ),
+            side,
         };
-        self.handle_pointer(ui, square_at);
+        self.grid = Some(grid);
+        self.handle_pointer(ui, grid);
 
         let painter = ui.painter_at(area);
-        let frame_rect = grid.expand(BORDER);
+        let frame_rect = grid.rect.expand(BORDER);
         paint::sunken_frame(&painter, frame_rect, BORDER);
         if self.game.help_granted() {
             painter.rect_stroke(
@@ -247,14 +244,15 @@ impl App {
                 StrokeKind::Inside,
             );
         }
-        let held = self.held.flatten();
         for pos in dims.positions() {
-            let min = grid.min + vec2(pos.x as f32 * side, pos.y as f32 * side);
-            let rect = Rect::from_min_size(min, vec2(side, side));
-            paint::cell(&painter, rect, self.game.cell(pos), held == Some(pos));
+            let pressed = self.held == Some(pos);
+            paint::cell(&painter, grid.square(pos), self.game.cell(pos), pressed);
         }
 
-        let hovering = ui.ctx().pointer_hover_pos().is_some_and(|p| grid.contains(p));
+        let hovering = ui
+            .ctx()
+            .pointer_hover_pos()
+            .is_some_and(|p| grid.rect.contains(p));
         if hovering && self.game.help_granted() {
             ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
         }
@@ -263,7 +261,7 @@ impl App {
     /// Mirrors the original: right click (or a modifier with left click)
     /// toggles a flag on press; left or middle opens or chords on release,
     /// on whatever square the pointer is over by then.
-    fn handle_pointer(&mut self, ui: &Ui, square_at: impl Fn(egui::Pos2) -> Option<Pos>) {
+    fn handle_pointer(&mut self, ui: &Ui, grid: GridLayout) {
         if self.game.status() != Status::Playing {
             self.held = None;
             return;
@@ -286,24 +284,43 @@ impl App {
             )
         });
         let [primary, secondary, middle] = pressed;
-        let under = pointer.and_then(&square_at);
-        let on_window = pointer.is_some_and(|p| ui.max_rect().contains(p));
+        let under = pointer.and_then(|p| grid.square_at(p, self.game.dims()));
 
         if let Some(pos) = under {
             if secondary || (primary && flag_modifier) {
                 self.game.toggle_flag(pos);
             } else if primary || middle {
-                self.held = Some(Some(pos));
+                self.held = Some(pos);
             }
         }
         if self.held.is_some() {
-            self.held = on_window.then_some(under);
+            self.held = under;
         }
-        if released
-            && let Some(Some(pos)) = self.held.take()
-            && self.game.cell(pos).look != Look::Flag
-        {
+        if released && let Some(pos) = self.held.take() {
             self.game.click(pos);
         }
+    }
+}
+
+/// Where the board's squares are on screen.
+#[derive(Clone, Copy, Debug)]
+struct GridLayout {
+    rect: Rect,
+    side: f32,
+}
+
+impl GridLayout {
+    fn square(self, pos: Pos) -> Rect {
+        let min = self.rect.min + vec2(pos.x as f32, pos.y as f32) * self.side;
+        Rect::from_min_size(min, vec2(self.side, self.side))
+    }
+
+    fn square_at(self, p: egui::Pos2, dims: Dims) -> Option<Pos> {
+        if !self.rect.contains(p) {
+            return None;
+        }
+        let x = ((p.x - self.rect.min.x) / self.side) as usize;
+        let y = ((p.y - self.rect.min.y) / self.side) as usize;
+        Some(Pos::new(x.min(dims.width - 1), y.min(dims.height - 1)))
     }
 }

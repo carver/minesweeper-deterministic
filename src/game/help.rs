@@ -64,7 +64,7 @@ impl Game {
         let verdict = match solution {
             Solution::Inconsistent => self.deny(&self.board.wrong_flags()),
             Solution::Deductions(found) if found.is_empty() => {
-                self.wand = true;
+                self.help_granted = true;
                 self.record(Event::HelpDecided {
                     verdict: HelpVerdict::Granted,
                     missed: Vec::new(),

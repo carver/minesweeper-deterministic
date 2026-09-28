@@ -121,6 +121,26 @@ impl Board {
         self.dims.pos(moved_to)
     }
 
+    /// Reads what [`Board::layout`] writes. `None` unless every row has the
+    /// same non-zero length and holds only `*` and `.`.
+    pub fn from_layout(layout: &str) -> Option<Self> {
+        let rows: Vec<&[u8]> = layout.split('/').map(str::as_bytes).collect();
+        let width = rows[0].len();
+        if width == 0 || rows.iter().any(|r| r.len() != width) {
+            return None;
+        }
+        let dims = Dims::new(width, rows.len());
+        let mut mines = Vec::new();
+        for pos in dims.positions() {
+            match rows[pos.y][pos.x] {
+                b'*' => mines.push(pos),
+                b'.' => {}
+                _ => return None,
+            }
+        }
+        Some(Self::from_mines(dims, &mines))
+    }
+
     /// The mines as rows separated by `/`, `*` for a mine and `.` for none.
     pub fn layout(&self) -> String {
         let rows: Vec<String> = self
@@ -229,6 +249,20 @@ mod tests {
     fn layout_lists_rows() {
         let board = Board::from_mines(Dims::new(3, 2), &[Pos::new(0, 0), Pos::new(2, 1)]);
         assert_eq!(board.layout(), "*../..*");
+    }
+
+    #[test]
+    fn layout_round_trips() {
+        let board = Board::random(Dims::new(30, 16), 99, &mut Rng::seeded(5));
+        let copy = Board::from_layout(&board.layout()).expect("valid layout");
+        assert_eq!(copy.layout(), board.layout());
+    }
+
+    #[test]
+    fn malformed_layouts_are_rejected() {
+        for bad in ["", "*./.", "*x", "../"] {
+            assert!(Board::from_layout(bad).is_none(), "{bad:?}");
+        }
     }
 
     #[test]

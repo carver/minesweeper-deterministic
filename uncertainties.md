@@ -13,6 +13,9 @@ grants help. You chose: lose, and mark the wrong flags red.
 - Counter-argument: marking the wrong flags reveals ground truth the player
   never earned. Marking the unsatisfiable numbers explains the mistake using
   only what was visible.
+- When a single number has more flags than its value, the original's own
+  check catches it first and marks that number. I kept that. The wrong flag
+  still shows crossed out once the game is lost.
 
 ## Asking for help while automation is still rippling
 
@@ -38,6 +41,16 @@ click. So a chord could spend your help on a square you never chose.
 - Counter-argument: none that I find convincing. The original's behaviour
   looks accidental.
 
+## Help granted before the first click
+
+Asking before opening anything is always granted, since nothing is known. In
+the original the first click then spends that help on a square that was
+guaranteed safe anyway.
+
+- Picked: the first square never uses up help, so it stays for later.
+- Counter-argument: asking before the first click is pointless, and parity
+  says to let the player waste it.
+
 ## Unflagging a mine found through help
 
 The original flags the mine but lets you remove that flag afterwards, which
@@ -45,7 +58,8 @@ leaves a known mine unmarked.
 
 - Picked: the flag is locked.
 - Counter-argument: players who like full control might want every flag to
-  behave the same.
+  behave the same. You asked for parity, so this is a one-line revert in
+  `Game::toggle_flag` if you disagree.
 
 ## Switching to "Resolve local constraints" mid-game
 
@@ -53,7 +67,14 @@ The original swaps the rule set but applies it only from the next action on.
 
 - Picked: switching on resolves the whole board right away.
 - Counter-argument: parity. Someone flipping the setting to compare modes
-  might expect nothing to happen until they click.
+  might expect nothing to happen until they click. Reverting means deleting
+  `resolve_everywhere` in `src/game.rs`.
+
+## Pre-commit hook
+
+Your standards say hooks must finish in 5 seconds and should lint. Clippy
+takes 9 to 12 seconds on this mounted checkout, so the hook only checks
+formatting and CI runs clippy and the tests.
 
 ## Graphics
 
