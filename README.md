@@ -52,7 +52,12 @@ eframe draws with OpenGL and works on both X11 and Wayland.
 ```sh
 git config core.hooksPath .githooks   # fmt + clippy before each commit
 cargo test                            # CI runs this with --release
+cargo run --release --example solver_stress -- 200 40   # solver timing
 ```
+
+`solver_stress` times the solver on expert boards with a given percentage of
+safe squares revealed at random. Scattered reveals make wider frontiers than
+real play does; at 20 to 40% the worst case is around 150 ms.
 
 Layout:
 
