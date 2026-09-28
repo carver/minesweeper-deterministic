@@ -6,7 +6,7 @@ use eframe::egui::{Event, Key, Modifiers, PointerButton, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use minesweeper_deterministic::board::Board;
-use minesweeper_deterministic::game::{Automation, Game, Look, Status};
+use minesweeper_deterministic::game::{Automation, Game, Look, Size, Status};
 use minesweeper_deterministic::grid::Pos;
 use minesweeper_deterministic::rng::Rng;
 use minesweeper_deterministic::ui::App;
@@ -306,4 +306,68 @@ fn unknown_saved_automation_falls_back_to_default() {
     eframe::Storage::set_string(&mut storage, "automation", "bogus".into());
     let restored = App::restore(Some(&storage), None);
     assert_eq!(restored.game().automation(), Automation::default());
+}
+
+fn pick_size(h: &mut Harness<'static, App>, current: &str, item: &str) {
+    h.get_by_value(current).click();
+    // The list opens a frame after the click.
+    h.step();
+    h.step();
+    h.get_by_label(item).click();
+    h.step();
+    h.step();
+}
+
+const BEGINNER: &str = "Beginner: 9×9, 10 mines";
+
+#[test]
+fn picking_a_size_on_a_fresh_board_starts_at_once() {
+    let mut h = window("*../.../...", Automation::ZerosOnly);
+    pick_size(&mut h, "Custom", BEGINNER);
+    assert!(!dialog_open(&h));
+    assert_eq!(h.state().game().config(), Size::Beginner.config());
+    assert_eq!(h.state().game().automation(), Automation::ZerosOnly);
+}
+
+#[test]
+fn picking_a_size_mid_game_asks_first() {
+    let mut h = window("*../.../...", Automation::ZerosOnly);
+    click(&mut h, Pos::new(1, 1), PointerButton::Primary);
+    pick_size(&mut h, "Custom", BEGINNER);
+    h.get_by_label("Abandon this game and start a new Beginner game?");
+    h.get_by_label("Keep playing").click();
+    h.step();
+    h.step();
+    assert_eq!(look(&h, 1, 1), Look::Number(1));
+
+    pick_size(&mut h, "Custom", BEGINNER);
+    h.get_by_label("Start new game").click();
+    h.step();
+    h.step();
+    assert_eq!(h.state().game().config(), Size::Beginner.config());
+}
+
+#[test]
+fn smiley_keeps_the_picked_size() {
+    let mut h = window("*../.../...", Automation::ZerosOnly);
+    pick_size(&mut h, "Custom", BEGINNER);
+    h.get_by_label("New game").click();
+    h.step();
+    assert_eq!(h.state().game().config(), Size::Beginner.config());
+}
+
+#[test]
+fn size_choice_survives_a_restart() {
+    let mut h = window("*../.../...", Automation::ZerosOnly);
+    pick_size(&mut h, "Custom", "Intermediate: 16×16, 40 mines");
+    let mut storage = MemoryStorage::default();
+    eframe::App::save(h.state_mut(), &mut storage);
+    let restored = App::restore(Some(&storage), None);
+    assert_eq!(restored.game().config(), Size::Intermediate.config());
+}
+
+#[test]
+fn nothing_saved_starts_expert() {
+    let restored = App::restore(None, None);
+    assert_eq!(restored.game().config(), Size::Expert.config());
 }

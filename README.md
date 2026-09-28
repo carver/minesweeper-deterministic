@@ -28,9 +28,13 @@ you missed turn red. Luck never decides a game. Only mistakes do.
   next square you open is opened safely. A mine found that way stays flagged
   with a yellow tint.
 
-The board is 30×16 with 99 mines. Your first square is never a mine.
+The size menu at the top left picks Beginner (9×9, 10 mines), Intermediate
+(16×16, 40) or Expert (30×16, 99, the default). Picking one starts a new game
+at that size, asking first if you are mid-game. Your first square is never a
+mine.
 
-Window size and the automation choice are remembered between runs, in
+Window size, board size and the automation choice are remembered between
+runs, in
 `~/.local/share/minesweeper-deterministic/app.ron`.
 
 ## Journal

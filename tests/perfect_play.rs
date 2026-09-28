@@ -4,13 +4,13 @@
 
 use std::sync::atomic::AtomicBool;
 
-use minesweeper_deterministic::game::{Automation, Config, Game, HelpVerdict, Look, Status};
+use minesweeper_deterministic::game::{Automation, Game, HelpVerdict, Look, Size, Status};
 use minesweeper_deterministic::grid::Pos;
 use minesweeper_deterministic::rng::Rng;
 use minesweeper_deterministic::solver::{self, Solution, Verdict};
 
-fn play(seed: u64, automation: Automation) -> Game {
-    let mut game = Game::new(Config::EXPERT, automation, Rng::seeded(seed));
+fn play(seed: u64, size: Size, automation: Automation) -> Game {
+    let mut game = Game::new(size.config(), automation, Rng::seeded(seed));
     let mut picker = Rng::seeded(seed ^ 0xABCD);
     let dims = game.dims();
     game.click(Pos::new(dims.width / 2, dims.height / 2));
@@ -62,7 +62,7 @@ fn game_puzzle(game: &Game) -> solver::Puzzle {
     solver::Puzzle {
         dims,
         cells,
-        mines: Config::EXPERT.mines,
+        mines: game.config().mines,
     }
 }
 
@@ -70,7 +70,7 @@ fn game_puzzle(game: &Game) -> solver::Puzzle {
 fn perfect_player_always_wins_with_local_automation() {
     for seed in 0..200 {
         assert_eq!(
-            play(seed, Automation::LocalConstraints).status(),
+            play(seed, Size::Expert, Automation::LocalConstraints).status(),
             Status::Won,
             "seed {seed}"
         );
@@ -81,9 +81,19 @@ fn perfect_player_always_wins_with_local_automation() {
 fn perfect_player_always_wins_without_automation() {
     for seed in 1000..1100 {
         assert_eq!(
-            play(seed, Automation::ZerosOnly).status(),
+            play(seed, Size::Expert, Automation::ZerosOnly).status(),
             Status::Won,
             "seed {seed}"
         );
+    }
+}
+
+#[test]
+fn perfect_player_always_wins_on_smaller_boards() {
+    for seed in 0..200 {
+        for size in [Size::Beginner, Size::Intermediate] {
+            let status = play(seed, size, Automation::LocalConstraints).status();
+            assert_eq!(status, Status::Won, "seed {seed}, {size:?}");
+        }
     }
 }

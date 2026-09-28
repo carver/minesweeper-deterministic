@@ -282,6 +282,30 @@ fn in_progress_once_something_is_opened_or_flagged() {
 }
 
 #[test]
+fn restart_with_changes_the_size() {
+    let mut g = Game::new(Config::EXPERT, Automation::ZerosOnly, Rng::seeded(4));
+    g.restart_with(Size::Beginner.config());
+    assert_eq!(g.config(), Size::Beginner.config());
+    assert_eq!(g.dims(), Dims::new(9, 9));
+    assert_eq!(g.mines_left(), 10);
+    assert_eq!(g.automation(), Automation::ZerosOnly);
+    g.restart();
+    assert_eq!(
+        g.config(),
+        Size::Beginner.config(),
+        "plain restart keeps the new size"
+    );
+}
+
+#[test]
+fn every_size_leaves_room_to_play() {
+    for size in Size::ALL {
+        let Config { dims, mines } = size.config();
+        assert!(mines < dims.area(), "{size:?}");
+    }
+}
+
+#[test]
 fn restart_keeps_settings_and_clears_state() {
     let mut g = Game::new(Config::EXPERT, Automation::ZerosOnly, Rng::seeded(9));
     g.toggle_flag(p(0, 0));

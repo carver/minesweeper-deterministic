@@ -7,7 +7,7 @@ use std::time::{Instant, SystemTime};
 
 use eframe::egui::{self, Color32, CursorIcon, PointerButton, Rect, Sense, Stroke, StrokeKind, Ui, vec2};
 
-use crate::game::{Automation, Config, Game, HelpStart, Status};
+use crate::game::{Automation, Config, Game, HelpStart, Size, Status};
 use crate::grid::{Dims, Pos};
 use crate::journal::Journal;
 use crate::rng::Rng;
@@ -34,8 +34,9 @@ pub struct App {
     grid: Option<GridLayout>,
     /// Reported once the first frame is drawn, then cleared.
     startup: Option<Startup>,
-    /// Asking whether to abandon the game in progress.
-    confirming_new_game: bool,
+    /// Asking whether to abandon the game in progress for a new one of
+    /// this size.
+    pending_new_game: Option<Config>,
 }
 
 /// When the process started and when the renderer was ready, to find out
@@ -52,9 +53,10 @@ impl Default for App {
     }
 }
 
-/// Where the automation choice is kept between runs. The window size is
-/// saved by eframe itself.
+/// Where settings are kept between runs. The window size is saved by
+/// eframe itself.
 const AUTOMATION_KEY: &str = "automation";
+const SIZE_KEY: &str = "size";
 
 fn automation_key(automation: Automation) -> &'static str {
     match automation {
@@ -63,10 +65,24 @@ fn automation_key(automation: Automation) -> &'static str {
     }
 }
 
-fn automation_from_key(key: &str) -> Option<Automation> {
-    [Automation::ZerosOnly, Automation::LocalConstraints]
-        .into_iter()
-        .find(|&a| automation_key(a) == key)
+fn size_key(size: Size) -> &'static str {
+    match size {
+        Size::Beginner => "beginner",
+        Size::Intermediate => "intermediate",
+        Size::Expert => "expert",
+    }
+}
+
+/// Reads back a setting saved with `key_of`. Missing or unknown values give
+/// `None`.
+fn load<T: Copy>(
+    storage: Option<&dyn eframe::Storage>,
+    name: &str,
+    all: &[T],
+    key_of: fn(T) -> &'static str,
+) -> Option<T> {
+    let saved = storage?.get_string(name)?;
+    all.iter().copied().find(|&v| key_of(v) == saved)
 }
 
 /// The journal in its usual place, or `None` with the reason on stderr.
@@ -91,6 +107,9 @@ impl eframe::App for App {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         let key = automation_key(self.game.automation());
         storage.set_string(AUTOMATION_KEY, key.to_owned());
+        if let Some(size) = Size::of(self.game.config()) {
+            storage.set_string(SIZE_KEY, size_key(size).to_owned());
+        }
     }
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
@@ -106,8 +125,8 @@ impl eframe::App for App {
             ui.weak("Flag: right-click or Ctrl+click.   Keys: N or F2 new game, H request help.");
         });
         egui::CentralPanel::default().show(ui, |ui| self.board(ui));
-        if self.confirming_new_game {
-            self.confirm_new_game(ui.ctx());
+        if let Some(config) = self.pending_new_game {
+            self.confirm_new_game(ui.ctx(), config);
         } else {
             self.shortcuts(ui);
         }
@@ -121,13 +140,17 @@ impl eframe::App for App {
 }
 
 impl App {
-    /// A new expert game with the automation chosen last time, if saved.
+    /// A new game with the size and automation chosen last time, if saved.
     pub fn restore(storage: Option<&dyn eframe::Storage>, journal: Option<Journal>) -> Self {
-        let automation = storage
-            .and_then(|s| s.get_string(AUTOMATION_KEY))
-            .and_then(|key| automation_from_key(&key))
-            .unwrap_or_default();
-        let game = Game::new(Config::EXPERT, automation, Rng::from_time());
+        let automation = load(
+            storage,
+            AUTOMATION_KEY,
+            &[Automation::ZerosOnly, Automation::LocalConstraints],
+            automation_key,
+        )
+        .unwrap_or_default();
+        let size = load(storage, SIZE_KEY, &Size::ALL, size_key).unwrap_or_default();
+        let game = Game::new(size.config(), automation, Rng::from_time());
         Self::new(game, journal)
     }
 
@@ -140,7 +163,7 @@ impl App {
             journal,
             grid: None,
             startup: None,
-            confirming_new_game: false,
+            pending_new_game: None,
         }
     }
 
@@ -194,11 +217,11 @@ impl App {
         }
     }
 
-    fn restart(&mut self) {
+    fn start_new_game(&mut self, config: Config) {
         if self.help.take().is_some() {
             self.game.abandon_help();
         }
-        self.game.restart();
+        self.game.restart_with(config);
         self.started = Instant::now();
         self.held = None;
     }
@@ -246,7 +269,7 @@ impl App {
             )
         });
         if new_game {
-            self.ask_for_new_game();
+            self.ask_for_new_game(self.game.config());
         }
         if help && self.can_ask_for_help() {
             self.ask_for_help(ui.ctx());
@@ -254,15 +277,15 @@ impl App {
     }
 
     /// Starts over at once unless that would throw away a game in progress.
-    fn ask_for_new_game(&mut self) {
+    fn ask_for_new_game(&mut self, config: Config) {
         if self.game.in_progress() {
-            self.confirming_new_game = true;
+            self.pending_new_game = Some(config);
         } else {
-            self.restart();
+            self.start_new_game(config);
         }
     }
 
-    fn confirm_new_game(&mut self, ctx: &egui::Context) {
+    fn confirm_new_game(&mut self, ctx: &egui::Context, config: Config) {
         let (confirm, cancel) = ctx.input_mut(|i| {
             (
                 i.consume_key(egui::Modifiers::NONE, egui::Key::Enter),
@@ -270,7 +293,13 @@ impl App {
             )
         });
         let modal = egui::Modal::new(egui::Id::new("confirm-new-game")).show(ctx, |ui| {
-            ui.label("Abandon this game and start a new one?");
+            let question = match Size::of(config) {
+                Some(size) if config != self.game.config() => {
+                    format!("Abandon this game and start a new {} game?", size.name())
+                }
+                _ => "Abandon this game and start a new one?".to_owned(),
+            };
+            ui.label(question);
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 let start = ui.button("Start new game").clicked();
@@ -281,10 +310,10 @@ impl App {
         });
         let (start, keep) = modal.inner;
         if start || confirm {
-            self.confirming_new_game = false;
-            self.restart();
+            self.pending_new_game = None;
+            self.start_new_game(config);
         } else if keep || cancel || modal.should_close() {
-            self.confirming_new_game = false;
+            self.pending_new_game = None;
         }
     }
 
@@ -293,11 +322,15 @@ impl App {
     }
 
     fn controls(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
+            if let Some(size) = self.size_picker(ui) {
+                self.ask_for_new_game(size.config());
+            }
+            ui.add_space(8.0);
             ui.label(format!("Mines left: {}", self.game.mines_left()));
             ui.add_space(8.0);
             if self.face_button(ui) {
-                self.ask_for_new_game();
+                self.ask_for_new_game(self.game.config());
             }
             ui.add_space(8.0);
 
@@ -332,6 +365,24 @@ impl App {
                 ui.label(egui::RichText::new("Granted!").strong());
             }
         });
+    }
+
+    /// Returns a size the player picked that differs from the current game.
+    fn size_picker(&self, ui: &mut Ui) -> Option<Size> {
+        let current = Size::of(self.game.config());
+        let mut picked = None;
+        egui::ComboBox::from_id_salt("size")
+            .selected_text(current.map_or("Custom", Size::name))
+            .show_ui(ui, |ui| {
+                for size in Size::ALL {
+                    let Config { dims, mines } = size.config();
+                    let label = format!("{}: {}×{}, {mines} mines", size.name(), dims.width, dims.height);
+                    if ui.selectable_label(current == Some(size), label).clicked() {
+                        picked = Some(size);
+                    }
+                }
+            });
+        picked.filter(|&size| Some(size) != current)
     }
 
     /// Returns whether it was clicked.
@@ -397,7 +448,7 @@ impl App {
     /// toggles a flag on press; left or middle opens or chords on release,
     /// on whatever square the pointer is over by then.
     fn handle_pointer(&mut self, ui: &Ui, grid: GridLayout) {
-        if self.game.status() != Status::Playing || self.confirming_new_game {
+        if self.game.status() != Status::Playing || self.pending_new_game.is_some() {
             self.held = None;
             return;
         }

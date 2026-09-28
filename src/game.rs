@@ -28,10 +28,45 @@ pub struct Config {
 }
 
 impl Config {
-    pub const EXPERT: Self = Self {
-        dims: Dims::new(30, 16),
-        mines: 99,
-    };
+    pub const EXPERT: Self = Size::Expert.config();
+}
+
+/// The classic board sizes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Size {
+    Beginner,
+    Intermediate,
+    #[default]
+    Expert,
+}
+
+impl Size {
+    pub const ALL: [Self; 3] = [Self::Beginner, Self::Intermediate, Self::Expert];
+
+    pub const fn config(self) -> Config {
+        let (width, height, mines) = match self {
+            Self::Beginner => (9, 9, 10),
+            Self::Intermediate => (16, 16, 40),
+            Self::Expert => (30, 16, 99),
+        };
+        Config {
+            dims: Dims::new(width, height),
+            mines,
+        }
+    }
+
+    /// The preset with exactly this size and mine count, if any.
+    pub fn of(config: Config) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.config() == config)
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Beginner => "Beginner",
+            Self::Intermediate => "Intermediate",
+            Self::Expert => "Expert",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -134,7 +169,12 @@ impl Game {
 
     /// A fresh board with the same size, mine count and automation.
     pub fn restart(&mut self) {
-        let board = Board::random(self.config.dims, self.config.mines, &mut self.rng);
+        self.restart_with(self.config);
+    }
+
+    /// A fresh board of another size, keeping the automation.
+    pub fn restart_with(&mut self, config: Config) {
+        let board = Board::random(config.dims, config.mines, &mut self.rng);
         let rng = self.rng.clone();
         let revision = self.revision + 1;
         let mut events = std::mem::take(&mut self.events);
@@ -152,6 +192,10 @@ impl Game {
     fn record(&mut self, event: Event) {
         let at = self.now();
         self.events.push(Timed { at, event });
+    }
+
+    pub fn config(&self) -> Config {
+        self.config
     }
 
     pub fn dims(&self) -> Dims {

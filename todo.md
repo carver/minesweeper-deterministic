@@ -2,7 +2,7 @@
 
 ## Jason's ideas
 
-- Choose board size and mine count (beginner, intermediate, expert, custom).
+- Custom board size and mine count (the three classic sizes are done).
 - Start the game for you: open a first square, ideally one that is a zero so
   the board opens up.
 - Resolve more trivial cases automatically. For example two unknown squares
