@@ -187,3 +187,43 @@ fn smiley_starts_a_new_game() {
     h.step();
     assert_eq!(look(&h, 1, 1), Look::Covered);
 }
+
+/// Keeps saved values in memory, like eframe's file storage without the file.
+#[derive(Default)]
+struct MemoryStorage(std::collections::HashMap<String, String>);
+
+impl eframe::Storage for MemoryStorage {
+    fn get_string(&self, key: &str) -> Option<String> {
+        self.0.get(key).cloned()
+    }
+
+    fn set_string(&mut self, key: &str, value: String) {
+        self.0.insert(key.to_owned(), value);
+    }
+
+    fn remove_string(&mut self, key: &str) {
+        self.0.remove(key);
+    }
+
+    fn flush(&mut self) {}
+}
+
+#[test]
+fn automation_choice_survives_a_restart() {
+    let mut h = window("*../.../...", Automation::LocalConstraints);
+    h.get_by_label("No extra automation").click();
+    h.step();
+    let mut storage = MemoryStorage::default();
+    eframe::App::save(h.state_mut(), &mut storage);
+
+    let restored = App::restore(Some(&storage), None);
+    assert_eq!(restored.game().automation(), Automation::ZerosOnly);
+}
+
+#[test]
+fn unknown_saved_automation_falls_back_to_default() {
+    let mut storage = MemoryStorage::default();
+    eframe::Storage::set_string(&mut storage, "automation", "bogus".into());
+    let restored = App::restore(Some(&storage), None);
+    assert_eq!(restored.game().automation(), Automation::default());
+}

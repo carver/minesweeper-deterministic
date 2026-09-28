@@ -1,5 +1,5 @@
 use eframe::egui;
-use minesweeper_deterministic::ui::App;
+use minesweeper_deterministic::ui::{App, open_journal};
 
 const ICON: &[u8] = include_bytes!("../assets/icon.png");
 
@@ -20,6 +20,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Deterministic Minesweeper",
         options,
-        Box::new(|_| Ok(Box::<App>::default())),
+        Box::new(|cc| Ok(Box::new(App::restore(cc.storage, open_journal())))),
     )
 }

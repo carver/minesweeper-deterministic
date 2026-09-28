@@ -36,12 +36,29 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
-        let game = Game::new(Config::EXPERT, Automation::default(), Rng::from_time());
-        Self::new(game, open_journal())
+        Self::restore(None, open_journal())
     }
 }
 
-fn open_journal() -> Option<Journal> {
+/// Where the automation choice is kept between runs. The window size is
+/// saved by eframe itself.
+const AUTOMATION_KEY: &str = "automation";
+
+fn automation_key(automation: Automation) -> &'static str {
+    match automation {
+        Automation::ZerosOnly => "zeros-only",
+        Automation::LocalConstraints => "local-constraints",
+    }
+}
+
+fn automation_from_key(key: &str) -> Option<Automation> {
+    [Automation::ZerosOnly, Automation::LocalConstraints]
+        .into_iter()
+        .find(|&a| automation_key(a) == key)
+}
+
+/// The journal in its usual place, or `None` with the reason on stderr.
+pub fn open_journal() -> Option<Journal> {
     let Some(dir) = Journal::default_dir() else {
         eprintln!("journal disabled: no HOME or XDG_STATE_HOME");
         return None;
@@ -59,6 +76,11 @@ fn open_journal() -> Option<Journal> {
 }
 
 impl eframe::App for App {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        let key = automation_key(self.game.automation());
+        storage.set_string(AUTOMATION_KEY, key.to_owned());
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.game.advance_to(self.clock());
         self.collect_help();
@@ -78,6 +100,16 @@ impl eframe::App for App {
 }
 
 impl App {
+    /// A new expert game with the automation chosen last time, if saved.
+    pub fn restore(storage: Option<&dyn eframe::Storage>, journal: Option<Journal>) -> Self {
+        let automation = storage
+            .and_then(|s| s.get_string(AUTOMATION_KEY))
+            .and_then(|key| automation_from_key(&key))
+            .unwrap_or_default();
+        let game = Game::new(Config::EXPERT, automation, Rng::from_time());
+        Self::new(game, journal)
+    }
+
     pub fn new(game: Game, journal: Option<Journal>) -> Self {
         Self {
             game,

@@ -27,6 +27,9 @@ you missed turn red. Luck never decides a game. Only mistakes do.
 
 The board is 30×16 with 99 mines. Your first square is never a mine.
 
+Window size and the automation choice are remembered between runs, in
+`~/.local/share/minesweeper-deterministic/app.ron`.
+
 ## Journal
 
 Every game is logged to `~/.local/state/minesweeper-deterministic/`

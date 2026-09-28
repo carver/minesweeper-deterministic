@@ -23,5 +23,4 @@
 - Keyboard shortcuts (F2 or N for a new game, H for help).
 - Timer and best times per board size.
 - Show a warning while the solver runs long, with a way to cancel.
-- Remember window size and automation choice between runs.
 - Undo the last move after a denied help request, as a practice mode.
