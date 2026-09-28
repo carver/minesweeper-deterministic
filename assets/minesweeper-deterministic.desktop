@@ -6,3 +6,4 @@ Exec=minesweeper-deterministic
 Icon=minesweeper-deterministic
 Categories=Game;LogicGame;
 Terminal=false
+StartupWMClass=minesweeper-deterministic

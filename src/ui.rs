@@ -32,6 +32,16 @@ pub struct App {
     journal: Option<Journal>,
     /// Where the squares were last drawn.
     grid: Option<GridLayout>,
+    /// Reported once the first frame is drawn, then cleared.
+    startup: Option<Startup>,
+}
+
+/// When the process started and when the renderer was ready, to find out
+/// where slow launches spend their time.
+#[derive(Clone, Copy, Debug)]
+pub struct Startup {
+    pub launched: Instant,
+    pub renderer_ready: Instant,
 }
 
 impl Default for App {
@@ -99,6 +109,7 @@ impl eframe::App for App {
             ui.ctx().request_repaint();
         }
         self.write_journal();
+        self.report_startup();
     }
 }
 
@@ -121,6 +132,33 @@ impl App {
             help: None,
             journal,
             grid: None,
+            startup: None,
+        }
+    }
+
+    /// Logs startup timing to stderr and the journal on the first frame.
+    pub fn with_startup(mut self, startup: Startup) -> Self {
+        self.startup = Some(startup);
+        self
+    }
+
+    fn report_startup(&mut self) {
+        let Some(Startup {
+            launched,
+            renderer_ready,
+        }) = self.startup.take()
+        else {
+            return;
+        };
+        let ms = |t: Instant| t.duration_since(launched).as_millis();
+        let text = format!(
+            "startup: renderer ready after {} ms, first frame after {} ms",
+            ms(renderer_ready),
+            ms(Instant::now())
+        );
+        eprintln!("{text}");
+        if let Some(journal) = &mut self.journal {
+            let _ = journal.note(SystemTime::now(), &text);
         }
     }
 

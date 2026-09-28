@@ -48,7 +48,10 @@ Needs a Rust toolchain (edition 2024, so Rust 1.85 or newer).
 cargo run --release
 ```
 
-eframe draws with OpenGL and works on both X11 and Wayland.
+It draws with OpenGL (glow) by default and works on both X11 and Wayland.
+Set `MINESWEEPER_RENDERER=wgpu` to use wgpu instead. Each launch writes a
+line like `startup: renderer ready after 420 ms, first frame after 450 ms`
+to stderr and the journal, which is the way to compare the two.
 
 To install it with a launcher entry and icon for your user:
 

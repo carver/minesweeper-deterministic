@@ -140,6 +140,16 @@ fn a_new_day_prunes_again() {
 }
 
 #[test]
+fn notes_are_timestamped() {
+    let tmp = TempDir::new();
+    let today = day(2026, 9, 28);
+    let mut journal = Journal::open(tmp.0.clone(), at_day(today, 0)).expect("open");
+    journal.note(at_day(today, 7), "startup: hello").expect("note");
+    let text = fs::read_to_string(tmp.0.join("journal-2026-09-28.log")).expect("read");
+    assert_eq!(text, "00:00:07.000 startup: hello\n");
+}
+
+#[test]
 fn nothing_to_write_creates_no_file() {
     let tmp = TempDir::new();
     let mut journal = Journal::open(tmp.0.clone(), at_day(0, 0)).expect("open");

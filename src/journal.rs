@@ -57,6 +57,14 @@ impl Journal {
         file.flush()
     }
 
+    /// Writes a line that is not a game event, such as startup timing.
+    pub fn note(&mut self, now: SystemTime, text: &str) -> io::Result<()> {
+        let clock = time_of_day(now);
+        let file = self.file_for(Date::of(now))?;
+        writeln!(file, "{clock} {text}")?;
+        file.flush()
+    }
+
     fn file_for(&mut self, today: Date) -> io::Result<&mut BufWriter<File>> {
         if self.open.as_ref().is_none_or(|(date, _)| *date != today) {
             prune(&self.dir, today);
