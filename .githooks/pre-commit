@@ -1,0 +1,6 @@
+#!/bin/sh
+# Format and lint only; tests run in CI. Enable with:
+#   git config core.hooksPath .githooks
+set -e
+cargo fmt --check
+cargo clippy --quiet --all-targets -- -D warnings

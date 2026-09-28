@@ -8,3 +8,4 @@ pub mod grid;
 pub mod rng;
 pub mod schedule;
 pub mod solver;
+pub mod ui;
