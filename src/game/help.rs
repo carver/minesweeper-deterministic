@@ -6,7 +6,7 @@
 
 use std::sync::atomic::AtomicBool;
 
-use super::{Game, Status};
+use super::{Event, Game, Status};
 use crate::grid::Pos;
 use crate::solver::{self, Puzzle, Solution};
 
@@ -36,6 +36,7 @@ pub struct SolverJob {
 
 impl Game {
     pub fn request_help(&mut self) -> HelpStart {
+        self.record(Event::PlayerRequestedHelp);
         if self.status != Status::Playing || self.is_busy() {
             return HelpStart::Unavailable;
         }
@@ -57,12 +58,17 @@ impl Game {
     /// since the job was made, in which case the answer is discarded.
     pub fn conclude_help(&mut self, job: &SolverJob, solution: Solution) -> Option<HelpVerdict> {
         if job.revision != self.revision || self.status != Status::Playing {
+            self.record(Event::HelpAnswerDiscarded);
             return None;
         }
         let verdict = match solution {
             Solution::Inconsistent => self.deny(&self.board.wrong_flags()),
             Solution::Deductions(found) if found.is_empty() => {
                 self.wand = true;
+                self.record(Event::HelpDecided {
+                    verdict: HelpVerdict::Granted,
+                    missed: Vec::new(),
+                });
                 HelpVerdict::Granted
             }
             Solution::Deductions(found) => {
@@ -71,6 +77,11 @@ impl Game {
             }
         };
         Some(verdict)
+    }
+
+    /// Notes that a solver job was dropped before it answered.
+    pub fn abandon_help(&mut self) {
+        self.record(Event::HelpAnswerDiscarded);
     }
 
     /// Runs the whole help check on the calling thread.
@@ -90,6 +101,10 @@ impl Game {
         for &pos in missed {
             self.missed[dims.index(pos)] = true;
         }
+        self.record(Event::HelpDecided {
+            verdict: HelpVerdict::Denied,
+            missed: missed.to_vec(),
+        });
         self.lose(None);
         HelpVerdict::Denied
     }

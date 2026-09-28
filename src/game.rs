@@ -4,10 +4,12 @@
 //! ripple. Each step schedules follow-ups on the neighbours of the square it
 //! touched, orthogonal ones sooner than diagonal ones.
 
+mod event;
 mod help;
 #[cfg(test)]
 mod tests;
 
+pub use event::{Event, Timed};
 pub use help::{HelpStart, HelpVerdict, SolverJob};
 
 use crate::board::{Board, View};
@@ -94,6 +96,8 @@ pub struct Game {
     /// Bumped on every change to the visible board, so stale help answers
     /// can be recognised.
     revision: u64,
+    /// Not yet collected by [`Game::take_events`].
+    events: Vec<Timed>,
 }
 
 impl Game {
@@ -105,7 +109,8 @@ impl Game {
 
     pub fn with_board(board: Board, automation: Automation, rng: Rng) -> Self {
         let dims = board.dims();
-        Self {
+        let layout = board.layout();
+        let mut game = Self {
             config: Config {
                 dims,
                 mines: board.mine_count(),
@@ -121,7 +126,10 @@ impl Game {
             magic: vec![false; dims.area()],
             exploded: None,
             revision: 0,
-        }
+            events: Vec::new(),
+        };
+        game.record(Event::NewGame { layout });
+        game
     }
 
     /// A fresh board with the same size, mine count and automation.
@@ -129,8 +137,21 @@ impl Game {
         let board = Board::random(self.config.dims, self.config.mines, &mut self.rng);
         let rng = self.rng.clone();
         let revision = self.revision + 1;
+        let mut events = std::mem::take(&mut self.events);
         *self = Self::with_board(board, self.automation, rng);
+        events.append(&mut self.events);
+        self.events = events;
         self.revision = revision;
+    }
+
+    /// Everything that happened since the last call, oldest first.
+    pub fn take_events(&mut self) -> Vec<Timed> {
+        std::mem::take(&mut self.events)
+    }
+
+    fn record(&mut self, event: Event) {
+        let at = self.now();
+        self.events.push(Timed { at, event });
     }
 
     pub fn dims(&self) -> Dims {
@@ -186,6 +207,7 @@ impl Game {
     }
 
     pub fn set_automation(&mut self, automation: Automation) {
+        self.record(Event::PlayerSetAutomation(automation));
         let switched_on = automation == Automation::LocalConstraints && self.automation != automation;
         self.automation = automation;
         if switched_on && self.status == Status::Playing {
@@ -214,6 +236,7 @@ impl Game {
     /// Primary click: open a covered square, or open the neighbours of a
     /// number whose flags are all placed.
     pub fn click(&mut self, pos: Pos) {
+        self.record(Event::PlayerClicked(pos));
         if self.status != Status::Playing {
             return;
         }
@@ -227,6 +250,7 @@ impl Game {
     }
 
     pub fn toggle_flag(&mut self, pos: Pos) {
+        self.record(Event::PlayerToggledFlag(pos));
         let i = self.dims().index(pos);
         if self.status != Status::Playing || self.magic[i] {
             return;
@@ -236,8 +260,17 @@ impl Game {
             View::Flagged => false,
             View::Revealed(_) => return,
         };
+        self.set_flag(pos, flagged);
+    }
+
+    fn set_flag(&mut self, pos: Pos, flagged: bool) {
         self.board.set_flag(pos, flagged);
         self.revision += 1;
+        self.record(if flagged {
+            Event::Flagged(pos)
+        } else {
+            Event::Unflagged(pos)
+        });
         self.after_flag(pos);
     }
 
@@ -257,18 +290,18 @@ impl Game {
             return;
         }
         if std::mem::take(&mut self.first_reveal) && self.board.is_mine(pos) {
-            self.board.relocate_mine(pos, &mut self.rng);
+            let to = self.board.relocate_mine(pos, &mut self.rng);
+            self.record(Event::MineMoved { from: pos, to });
         }
         if with_wand {
             self.wand = false;
             let i = self.dims().index(pos);
             self.magic[i] = true;
+            self.record(Event::HelpUsed(pos));
         }
         if self.board.is_mine(pos) {
             if with_wand {
-                self.board.set_flag(pos, true);
-                self.revision += 1;
-                self.after_flag(pos);
+                self.set_flag(pos, true);
             } else {
                 self.lose(Some(pos));
             }
@@ -277,6 +310,7 @@ impl Game {
 
         let n = self.board.reveal(pos);
         self.revision += 1;
+        self.record(Event::Revealed { pos, number: n });
         if self.board.all_safe_revealed() {
             self.win();
         } else if n == 0 {
@@ -312,9 +346,7 @@ impl Game {
         }
         let hidden: Vec<Pos> = self.board.hidden_neighbours(pos).collect();
         for q in hidden {
-            self.board.set_flag(q, true);
-            self.revision += 1;
-            self.after_flag(q);
+            self.set_flag(q, true);
         }
     }
 
@@ -349,12 +381,14 @@ impl Game {
                 self.board.set_flag(pos, true);
             }
         }
+        self.record(Event::Won);
     }
 
     fn lose(&mut self, exploded: Option<Pos>) {
         self.status = Status::Lost;
         self.exploded = exploded;
         self.end();
+        self.record(Event::Lost { exploded });
     }
 
     fn end(&mut self) {

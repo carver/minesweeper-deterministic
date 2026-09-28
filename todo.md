@@ -10,14 +10,9 @@
   can tell them apart, so it is a forced guess. Offer to spend help on it
   straight away, or open one of them for free.
 
-## Priority
-
-- Game journal: record every player action and every automatic action
-  during a game, so bugs can be diagnosed later. Rotate so logs are kept for
-  a month, not forever. (from `priority-todos.txt`)
-
 ## Ideas
 
+- Replay a game from its journal, to reproduce a reported bug in a test.
 - Keyboard shortcuts (F2 or N for a new game, H for help).
 - Timer and best times per board size.
 - Show a warning while the solver runs long, with a way to cancel.

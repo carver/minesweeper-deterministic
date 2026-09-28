@@ -111,24 +111,37 @@ impl Board {
         self.view[i] = if flagged { View::Flagged } else { View::Hidden };
     }
 
-    /// Moves the mine at `pos` to a random mine-free square other than `pos`.
-    pub fn relocate_mine(&mut self, pos: Pos, rng: &mut Rng) {
+    /// Moves the mine at `pos` to a random mine-free square other than
+    /// `pos`, and returns where it went.
+    pub fn relocate_mine(&mut self, pos: Pos, rng: &mut Rng) -> Pos {
         let i = self.dims.index(pos);
         debug_assert!(self.mines[i]);
-        self.place_random_mine_excluding(rng, Some(i));
+        let moved_to = self.place_random_mine_excluding(rng, Some(i));
         self.mines[i] = false;
+        self.dims.pos(moved_to)
+    }
+
+    /// The mines as rows separated by `/`, `*` for a mine and `.` for none.
+    pub fn layout(&self) -> String {
+        let rows: Vec<String> = self
+            .mines
+            .chunks(self.dims.width)
+            .map(|row| row.iter().map(|&m| if m { '*' } else { '.' }).collect())
+            .collect();
+        rows.join("/")
     }
 
     fn place_random_mine(&mut self, rng: &mut Rng) {
         self.place_random_mine_excluding(rng, None);
     }
 
-    fn place_random_mine_excluding(&mut self, rng: &mut Rng, excluded: Option<usize>) {
+    fn place_random_mine_excluding(&mut self, rng: &mut Rng, excluded: Option<usize>) -> usize {
         let free: Vec<usize> = (0..self.mines.len())
             .filter(|&i| !self.mines[i] && Some(i) != excluded)
             .collect();
         let chosen = free[rng.below(free.len())];
         self.mines[chosen] = true;
+        chosen
     }
 
     /// Numbers with more flags around them than their value.
@@ -203,11 +216,19 @@ mod tests {
         let origin = Pos::new(1, 1);
         for seed in 0..20 {
             let mut board = Board::from_mines(dims, &[origin, Pos::new(0, 0)]);
-            board.relocate_mine(origin, &mut Rng::seeded(seed));
+            let moved_to = board.relocate_mine(origin, &mut Rng::seeded(seed));
             assert!(!board.is_mine(origin));
+            assert!(board.is_mine(moved_to));
+            assert_ne!(moved_to, Pos::new(0, 0));
             assert!(board.is_mine(Pos::new(0, 0)));
             assert_eq!(board.mine_count(), 2);
         }
+    }
+
+    #[test]
+    fn layout_lists_rows() {
+        let board = Board::from_mines(Dims::new(3, 2), &[Pos::new(0, 0), Pos::new(2, 1)]);
+        assert_eq!(board.layout(), "*../..*");
     }
 
     #[test]

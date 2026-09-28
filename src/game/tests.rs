@@ -281,6 +281,69 @@ fn restart_keeps_settings_and_clears_state() {
     assert_eq!(look(&g, 0, 0), Look::Covered);
 }
 
+fn events(g: &mut Game) -> Vec<Event> {
+    g.take_events().into_iter().map(|t| t.event).collect()
+}
+
+#[test]
+fn events_record_player_and_game_actions() {
+    let mut g = game("*../.../...", Automation::ZerosOnly);
+    click(&mut g, 1, 1);
+    g.toggle_flag(p(0, 0));
+    g.request_help_blocking();
+    assert_eq!(
+        events(&mut g),
+        vec![
+            Event::NewGame {
+                layout: "*../.../...".into()
+            },
+            Event::PlayerClicked(p(1, 1)),
+            Event::Revealed {
+                pos: p(1, 1),
+                number: 1
+            },
+            Event::PlayerToggledFlag(p(0, 0)),
+            Event::Flagged(p(0, 0)),
+            Event::PlayerRequestedHelp,
+            Event::HelpDecided {
+                verdict: HelpVerdict::Denied,
+                missed: vec![p(1, 0), p(2, 0), p(0, 1), p(2, 1), p(0, 2), p(1, 2), p(2, 2)],
+            },
+            Event::Lost { exploded: None },
+        ]
+    );
+    assert!(g.take_events().is_empty());
+}
+
+#[test]
+fn events_carry_the_game_clock() {
+    let mut g = game("..../..../...*", Automation::ZerosOnly);
+    g.click(p(0, 0));
+    g.advance_to(ORTHOGONAL_DELAY);
+    let times: Vec<Millis> = g.take_events().iter().map(|t| t.at).collect();
+    assert_eq!(times, vec![0, 0, 0, 20, 20]);
+}
+
+#[test]
+fn moving_the_first_mine_is_recorded() {
+    let mut g = game("*../...", Automation::ZerosOnly);
+    click(&mut g, 0, 0);
+    let moved = events(&mut g)
+        .into_iter()
+        .any(|e| matches!(e, Event::MineMoved { from, .. } if from == p(0, 0)));
+    assert!(moved);
+}
+
+#[test]
+fn restart_keeps_uncollected_events() {
+    let mut g = game("*..", Automation::ZerosOnly);
+    g.toggle_flag(p(1, 0));
+    g.restart();
+    let all = events(&mut g);
+    assert!(all.contains(&Event::Flagged(p(1, 0))));
+    assert!(matches!(all.last(), Some(Event::NewGame { .. })));
+}
+
 proptest! {
     #[test]
     fn first_click_never_loses(seed: u64, x in 0usize..30, y in 0usize..16) {

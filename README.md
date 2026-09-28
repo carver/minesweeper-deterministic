@@ -27,6 +27,16 @@ you missed turn red. Luck never decides a game. Only mistakes do.
 
 The board is 30×16 with 99 mines. Your first square is never a mine.
 
+## Journal
+
+Every game is logged to `~/.local/state/minesweeper-deterministic/`
+(or `$XDG_STATE_HOME/minesweeper-deterministic/`), one file per UTC day.
+Each line has the wall time, the game's own clock and what happened: your
+clicks, flags and help requests, and everything the game did in response.
+The `new game` line lists every mine, so a game can be replayed. Files older
+than 30 days are deleted when the game starts. The path is printed to stderr
+on startup.
+
 ## Building
 
 Needs a Rust toolchain (edition 2024, so Rust 1.85 or newer).
@@ -54,6 +64,8 @@ Layout:
 | `src/game/help.rs` | The Request help flow |
 | `src/schedule.rs` | Virtual clock that turns automation into a ripple |
 | `src/solver.rs`, `src/solver/` | Global solver |
+| `src/game/event.rs` | What the journal records |
+| `src/journal.rs` | Daily journal files and pruning |
 | `src/ui.rs`, `src/ui/` | egui window, drawing, background solver thread |
 | `tests/perfect_play.rs` | A flawless player must win every game |
 

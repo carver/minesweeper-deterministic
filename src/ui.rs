@@ -3,12 +3,13 @@
 mod help_task;
 mod paint;
 
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use eframe::egui::{self, Color32, CursorIcon, PointerButton, Rect, Sense, Stroke, StrokeKind, Ui, vec2};
 
 use crate::game::{Automation, Config, Game, HelpStart, Look, Status};
 use crate::grid::Pos;
+use crate::journal::Journal;
 use crate::rng::Rng;
 use help_task::HelpTask;
 use paint::Mood;
@@ -27,6 +28,8 @@ pub struct App {
     /// means held but off the board's squares.
     held: Option<Option<Pos>>,
     help: Option<HelpTask>,
+    /// `None` if it could not be opened or a write failed.
+    journal: Option<Journal>,
 }
 
 impl Default for App {
@@ -36,6 +39,24 @@ impl Default for App {
             started: Instant::now(),
             held: None,
             help: None,
+            journal: open_journal(),
+        }
+    }
+}
+
+fn open_journal() -> Option<Journal> {
+    let Some(dir) = Journal::default_dir() else {
+        eprintln!("journal disabled: no HOME or XDG_STATE_HOME");
+        return None;
+    };
+    match Journal::open(dir.clone(), SystemTime::now()) {
+        Ok(journal) => {
+            eprintln!("journal: {}", journal.dir().display());
+            Some(journal)
+        }
+        Err(e) => {
+            eprintln!("journal disabled: cannot open {}: {e}", dir.display());
+            None
         }
     }
 }
@@ -55,6 +76,7 @@ impl eframe::App for App {
         if self.game.is_busy() {
             ui.ctx().request_repaint();
         }
+        self.write_journal();
     }
 }
 
@@ -63,11 +85,24 @@ impl App {
         self.started.elapsed().as_millis() as u64
     }
 
+    fn write_journal(&mut self) {
+        let events = self.game.take_events();
+        let Some(journal) = &mut self.journal else {
+            return;
+        };
+        if let Err(e) = journal.write(SystemTime::now(), &events) {
+            eprintln!("journal disabled: write failed: {e}");
+            self.journal = None;
+        }
+    }
+
     fn restart(&mut self) {
+        if self.help.take().is_some() {
+            self.game.abandon_help();
+        }
         self.game.restart();
         self.started = Instant::now();
         self.held = None;
-        self.help = None;
     }
 
     /// Applies a finished help answer, or cancels one the board has
@@ -78,14 +113,18 @@ impl App {
         };
         if task.job().revision != self.game.revision() {
             self.help = None;
+            self.game.abandon_help();
             return;
         }
         let Some(answer) = task.poll() else {
             return;
         };
         let task = self.help.take().expect("checked above");
-        if let Ok(solution) = answer {
-            self.game.conclude_help(task.job(), solution);
+        match answer {
+            Ok(solution) => {
+                self.game.conclude_help(task.job(), solution);
+            }
+            Err(_) => self.game.abandon_help(),
         }
     }
 
