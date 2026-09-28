@@ -96,3 +96,12 @@ could not finish, it would never answer, and mine does.
 - Counter-argument: none for correctness. The DP can still blow up on
   contrived boards where many numbers are half-filled at once; the UI keeps
   running and shows "working" while it thinks.
+
+## Numbers left unresolved next to a 0
+
+Found from your screenshot. It is a bug in the original too. When a 0 opened,
+the numbers around it never re-checked, so a number whose last extra covered
+square was that 0 stayed unresolved. Now every opened square, 0 or not,
+makes its neighbours re-check. No real trade-off here: the original's rule
+description ("resolve local constraints") says it should resolve them.
+

@@ -316,9 +316,15 @@ impl Game {
         self.record(Event::Revealed { pos, number: n });
         if self.board.all_safe_revealed() {
             self.win();
-        } else if n == 0 {
+            return;
+        }
+        if n == 0 {
             self.schedule_around(pos, Task::Reveal);
-        } else if self.automation == Automation::LocalConstraints {
+        }
+        // Neighbours re-check even when this square is a 0: it was one of
+        // their covered squares. The original skipped this, which could
+        // leave a number with exactly as many covered squares as mines.
+        if self.automation == Automation::LocalConstraints {
             self.flag_around_if_covered(pos);
             self.schedule_around(pos, Task::FlagAroundIfCovered);
             self.reveal_around_if_flagged(pos);

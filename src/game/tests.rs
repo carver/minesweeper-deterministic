@@ -351,6 +351,35 @@ proptest! {
         prop_assert_eq!(g.mines_left() + g.board.flag_count() as i64, 99);
     }
 
+    /// Once automation settles, no single number is left with a move it
+    /// forces. Only safe squares are clicked, so every game runs long.
+    #[test]
+    fn local_automation_reaches_a_fixed_point(
+        seed: u64,
+        (w, h) in (3usize..9, 3usize..9),
+        density in 10usize..35,
+        picks in proptest::collection::vec(any::<usize>(), 1..40),
+    ) {
+        let dims = Dims::new(w, h);
+        let mines = (dims.area() * density / 100).max(1);
+        let mut g = Game::new(Config { dims, mines }, Automation::LocalConstraints, Rng::seeded(seed));
+        for pick in picks {
+            let safe: Vec<Pos> = dims
+                .positions()
+                .filter(|&q| g.cell(q).look == Look::Covered && !g.board.is_mine(q))
+                .collect();
+            if g.status() != Status::Playing || safe.is_empty() {
+                break;
+            }
+            let target = safe[pick % safe.len()];
+            click(&mut g, target.x, target.y);
+            prop_assert_ne!(g.status(), Status::Lost);
+            if g.status() == Status::Playing {
+                prop_assert_eq!(g.board.locally_forced(), vec![], "after opening {:?}", target);
+            }
+        }
+    }
+
     /// Flags from automation are always right, since it only acts on what
     /// the numbers force.
     #[test]
