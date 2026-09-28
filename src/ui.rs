@@ -90,6 +90,9 @@ impl eframe::App for App {
             self.controls(ui);
             ui.add_space(4.0);
         });
+        egui::Panel::bottom("hint").show(ui, |ui| {
+            ui.weak("Flag with right-click or Ctrl+click. Middle-click works like left-click.");
+        });
         egui::CentralPanel::default().show(ui, |ui| self.board(ui));
 
         if self.game.is_busy() {
