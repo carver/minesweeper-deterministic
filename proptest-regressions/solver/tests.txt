@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a0b575215de9f287849f96b980e8ae184943f0e1ea759c1569ee95c71a89f8a4 # shrinks to p = Puzzle { dims: Dims { width: 2, height: 2 }, cells: [Number(0), Number(0), Unknown, Number(0)], mines: 0 }

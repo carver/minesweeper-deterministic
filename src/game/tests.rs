@@ -1,0 +1,302 @@
+use proptest::prelude::*;
+
+use super::*;
+use crate::rng::Rng;
+use crate::solver::Solution;
+
+/// Rows separated by `/`: `*` mine, `.` safe.
+fn game(rows: &str, automation: Automation) -> Game {
+    let rows: Vec<&str> = rows.split('/').collect();
+    let dims = Dims::new(rows[0].len(), rows.len());
+    let mines: Vec<Pos> = rows
+        .iter()
+        .enumerate()
+        .flat_map(|(y, r)| {
+            r.chars()
+                .enumerate()
+                .filter(|&(_, c)| c == '*')
+                .map(move |(x, _)| Pos::new(x, y))
+        })
+        .collect();
+    Game::with_board(Board::from_mines(dims, &mines), automation, Rng::seeded(0))
+}
+
+/// Two 1s over a pair of squares, one of them a mine: a true guess.
+const GUESS: &str = "../../*.";
+
+fn p(x: usize, y: usize) -> Pos {
+    Pos::new(x, y)
+}
+
+fn look(g: &Game, x: usize, y: usize) -> Look {
+    g.cell(p(x, y)).look
+}
+
+/// Clicks and lets automation finish.
+fn click(g: &mut Game, x: usize, y: usize) {
+    g.click(p(x, y));
+    g.settle();
+}
+
+#[test]
+fn zero_flood_ripples_outwards() {
+    let mut g = game("..../..../...*", Automation::ZerosOnly);
+    g.click(p(0, 0));
+    assert_eq!(look(&g, 0, 0), Look::Number(0));
+    assert_eq!(look(&g, 1, 0), Look::Covered);
+    g.advance_to(ORTHOGONAL_DELAY);
+    assert_eq!(look(&g, 1, 0), Look::Number(0));
+    assert_eq!(look(&g, 1, 1), Look::Covered);
+    g.advance_to(DIAGONAL_DELAY);
+    assert_eq!(look(&g, 1, 1), Look::Number(0));
+    g.settle();
+    assert_eq!(look(&g, 3, 1), Look::Number(1));
+    assert_eq!(g.status(), Status::Won);
+    assert_eq!(look(&g, 3, 2), Look::Flag);
+}
+
+#[test]
+fn opening_a_mine_loses_and_shows_the_board() {
+    let mut g = game("*..*/..../....", Automation::ZerosOnly);
+    click(&mut g, 2, 2);
+    g.toggle_flag(p(1, 0));
+    click(&mut g, 3, 0);
+    assert_eq!(g.status(), Status::Lost);
+    assert_eq!(look(&g, 3, 0), Look::Exploded);
+    assert_eq!(look(&g, 0, 0), Look::Mine);
+    assert_eq!(look(&g, 1, 0), Look::WrongFlag);
+}
+
+#[test]
+fn first_opened_square_is_never_a_mine() {
+    let mut g = game("*./..", Automation::ZerosOnly);
+    click(&mut g, 0, 0);
+    assert_eq!(g.status(), Status::Playing);
+    assert!(matches!(look(&g, 0, 0), Look::Number(_)));
+    assert_eq!(g.mines_left(), 1);
+}
+
+#[test]
+fn only_the_first_square_is_protected() {
+    let mut g = game("*../...", Automation::ZerosOnly);
+    click(&mut g, 2, 1);
+    click(&mut g, 0, 0);
+    assert_eq!(g.status(), Status::Lost);
+}
+
+#[test]
+fn winning_flags_every_mine() {
+    let mut g = game("*.", Automation::ZerosOnly);
+    click(&mut g, 1, 0);
+    assert_eq!(g.status(), Status::Won);
+    assert_eq!(look(&g, 0, 0), Look::Flag);
+    assert_eq!(g.mines_left(), 0);
+}
+
+#[test]
+fn chording_opens_the_rest_when_flags_match() {
+    let mut g = game("*../.../...", Automation::ZerosOnly);
+    click(&mut g, 1, 1);
+    click(&mut g, 1, 1);
+    assert_eq!(look(&g, 2, 2), Look::Covered, "no flags yet, chord does nothing");
+    g.toggle_flag(p(0, 0));
+    click(&mut g, 1, 1);
+    assert_eq!(look(&g, 2, 2), Look::Number(0));
+    assert_eq!(g.status(), Status::Won);
+}
+
+#[test]
+fn chording_with_a_wrong_flag_loses() {
+    let mut g = game("*../.../...", Automation::ZerosOnly);
+    click(&mut g, 1, 1);
+    g.toggle_flag(p(2, 0));
+    click(&mut g, 1, 1);
+    assert_eq!(g.status(), Status::Lost);
+    assert_eq!(look(&g, 0, 0), Look::Exploded);
+}
+
+#[test]
+fn local_constraints_flag_and_open_by_themselves() {
+    // The 2 below the mine pair flags both, then the 1 opens the last square.
+    let rows = "**./.../...";
+    let mut manual = game(rows, Automation::ZerosOnly);
+    click(&mut manual, 2, 2);
+    assert_eq!(manual.status(), Status::Playing);
+
+    let mut auto = game(rows, Automation::LocalConstraints);
+    click(&mut auto, 2, 2);
+    assert_eq!(auto.status(), Status::Won);
+}
+
+#[test]
+fn switching_automation_on_resolves_the_existing_board() {
+    let mut g = game("**./.../...", Automation::ZerosOnly);
+    click(&mut g, 2, 2);
+    g.set_automation(Automation::LocalConstraints);
+    g.settle();
+    assert_eq!(g.status(), Status::Won);
+}
+
+#[test]
+fn flag_count_can_exceed_mines() {
+    let mut g = game("*...", Automation::ZerosOnly);
+    g.toggle_flag(p(1, 0));
+    g.toggle_flag(p(2, 0));
+    assert_eq!(g.mines_left(), -1);
+    g.toggle_flag(p(2, 0));
+    assert_eq!(g.mines_left(), 0);
+}
+
+#[test]
+fn help_is_granted_on_a_true_guess() {
+    // Both bottom squares touch exactly the same two 1s.
+    let mut g = game(GUESS, Automation::LocalConstraints);
+    click(&mut g, 0, 0);
+    assert_eq!(g.request_help_blocking(), Some(HelpVerdict::Granted));
+    assert!(g.help_granted());
+}
+
+#[test]
+fn granted_help_opens_a_mine_safely_once() {
+    let mut g = game(GUESS, Automation::ZerosOnly);
+    click(&mut g, 0, 0);
+    g.request_help_blocking();
+    click(&mut g, 0, 2);
+    assert_eq!(g.status(), Status::Playing);
+    assert_eq!(look(&g, 0, 2), Look::Flag);
+    assert!(g.cell(p(0, 2)).magic);
+    assert!(!g.help_granted());
+
+    g.toggle_flag(p(0, 2));
+    assert_eq!(look(&g, 0, 2), Look::Flag, "a mine found by help stays flagged");
+}
+
+#[test]
+fn granted_help_marks_a_safe_square_as_magic() {
+    let mut g = game(GUESS, Automation::ZerosOnly);
+    click(&mut g, 0, 0);
+    g.request_help_blocking();
+    click(&mut g, 1, 2);
+    assert_eq!(look(&g, 1, 2), Look::Number(1));
+    assert!(g.cell(p(1, 2)).magic);
+    assert_eq!(g.status(), Status::Won);
+}
+
+#[test]
+fn chording_does_not_use_up_granted_help() {
+    let mut g = game(GUESS, Automation::ZerosOnly);
+    click(&mut g, 0, 0);
+    g.request_help_blocking();
+    click(&mut g, 0, 1);
+    assert!(g.help_granted());
+}
+
+#[test]
+fn help_is_denied_when_a_number_settles_something() {
+    let mut g = game("**./.../...", Automation::ZerosOnly);
+    click(&mut g, 2, 2);
+    assert_eq!(g.request_help_blocking(), Some(HelpVerdict::Denied));
+    assert_eq!(g.status(), Status::Lost);
+    assert!(g.cell(p(0, 0)).missed);
+    assert!(g.cell(p(1, 0)).missed);
+    assert!(!g.cell(p(2, 0)).missed);
+}
+
+#[test]
+fn help_is_denied_when_flags_already_settle_a_number() {
+    let mut g = game("*../.../...", Automation::ZerosOnly);
+    click(&mut g, 1, 1);
+    g.toggle_flag(p(0, 0));
+    assert_eq!(g.request_help_blocking(), Some(HelpVerdict::Denied));
+    assert!(g.cell(p(2, 2)).missed);
+}
+
+#[test]
+fn help_is_denied_when_a_number_has_too_many_flags() {
+    let mut g = game("*../.../...", Automation::ZerosOnly);
+    click(&mut g, 1, 1);
+    g.toggle_flag(p(0, 0));
+    g.toggle_flag(p(1, 0));
+    assert_eq!(g.request_help_blocking(), Some(HelpVerdict::Denied));
+    assert!(g.cell(p(1, 1)).missed);
+}
+
+#[test]
+fn help_is_denied_when_only_the_global_solver_sees_the_move() {
+    // The article's example: the last mine is in the top-left pair, so the
+    // far corner is safe, yet no single number says so.
+    let rows = "*.*...../..*...../......**/......*.";
+    let mut g = game(rows, Automation::ZerosOnly);
+    click(&mut g, 5, 0);
+    for (x, y) in [(2, 0), (2, 1), (6, 2), (7, 2), (6, 3)] {
+        g.toggle_flag(p(x, y));
+    }
+    assert_eq!(look(&g, 7, 3), Look::Covered);
+    assert_eq!(g.request_help_blocking(), Some(HelpVerdict::Denied));
+    assert!(g.cell(p(7, 3)).missed);
+}
+
+#[test]
+fn help_is_denied_when_flags_contradict_the_numbers() {
+    // Both 2s touch the real mines. A flag on (0,1) leaves the left 2 wanting
+    // one more mine and the right 2 wanting two, but only one mine is left.
+    let mut g = game(".*./.*.", Automation::ZerosOnly);
+    click(&mut g, 0, 0);
+    click(&mut g, 2, 0);
+    g.toggle_flag(p(0, 1));
+    assert_eq!(g.request_help_blocking(), Some(HelpVerdict::Denied));
+    assert!(g.cell(p(0, 1)).missed);
+    assert!(!g.cell(p(1, 1)).missed);
+}
+
+#[test]
+fn stale_solver_answer_is_ignored() {
+    let mut g = game(GUESS, Automation::LocalConstraints);
+    click(&mut g, 0, 0);
+    let HelpStart::NeedsSolver(job) = g.request_help() else {
+        panic!("expected solver job");
+    };
+    g.toggle_flag(p(1, 2));
+    assert_eq!(g.conclude_help(&job, Solution::Deductions(vec![])), None);
+    assert!(!g.help_granted());
+}
+
+#[test]
+fn help_waits_for_automation_to_finish() {
+    let mut g = game(GUESS, Automation::ZerosOnly);
+    g.click(p(0, 0));
+    assert!(g.is_busy());
+    assert!(matches!(g.request_help(), HelpStart::Unavailable));
+}
+
+#[test]
+fn restart_keeps_settings_and_clears_state() {
+    let mut g = Game::new(Config::EXPERT, Automation::ZerosOnly, Rng::seeded(9));
+    g.toggle_flag(p(0, 0));
+    let before = g.revision();
+    g.restart();
+    assert_eq!(g.mines_left(), 99);
+    assert_eq!(g.automation(), Automation::ZerosOnly);
+    assert!(g.revision() > before);
+    assert_eq!(look(&g, 0, 0), Look::Covered);
+}
+
+proptest! {
+    #[test]
+    fn first_click_never_loses(seed: u64, x in 0usize..30, y in 0usize..16) {
+        let mut g = Game::new(Config::EXPERT, Automation::LocalConstraints, Rng::seeded(seed));
+        click(&mut g, x, y);
+        prop_assert_ne!(g.status(), Status::Lost);
+        prop_assert_eq!(g.mines_left() + g.board.flag_count() as i64, 99);
+    }
+
+    /// Flags from automation are always right, since it only acts on what
+    /// the numbers force.
+    #[test]
+    fn automation_never_flags_a_safe_square(seed: u64, x in 0usize..30, y in 0usize..16) {
+        let mut g = Game::new(Config::EXPERT, Automation::LocalConstraints, Rng::seeded(seed));
+        click(&mut g, x, y);
+        prop_assert!(g.board.wrong_flags().is_empty());
+        prop_assert_ne!(g.status(), Status::Lost);
+    }
+}
