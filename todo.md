@@ -2,9 +2,6 @@
 
 ## Jason's ideas
 
-- chord-click for flagging a mine, because Framework laptop right-click is awkward
-    - Alt-click?
-    - Ctrl-click?
 - Choose board size and mine count (beginner, intermediate, expert, custom).
 - Start the game for you: open a first square, ideally one that is a zero so
   the board opens up.
