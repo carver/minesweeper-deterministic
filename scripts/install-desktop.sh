@@ -33,7 +33,9 @@ case "${1:-}" in
     *) usage >&2; exit 2 ;;
 esac
 
-cargo install --locked --path "$root"
+# A build directory of its own, so an install never shares artifacts with
+# builds running elsewhere against the same checkout.
+cargo install --locked --path "$root" --target-dir "$root/target/install"
 bin=${CARGO_HOME:-$HOME/.cargo}/bin/minesweeper-deterministic
 install -Dm644 "$root/assets/icon.svg" "$icon"
 mkdir -p "$(dirname "$desktop")"
