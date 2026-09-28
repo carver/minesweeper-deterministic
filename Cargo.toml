@@ -5,6 +5,9 @@ edition = "2024"
 
 [dependencies]
 eframe = { version = "0.36.2", default-features = false, features = ["accesskit", "default_fonts", "glow", "links", "persistence", "wayland", "wgpu", "x11"] }
+# Not used directly: its GNOME-style title bar is off unless eframe's default
+# features are on, and Wayland windows otherwise get plain square buttons.
+winit = { version = "0.30.13", default-features = false, features = ["wayland-csd-adwaita"] }
 
 [dev-dependencies]
 egui_kittest = { version = "0.36", features = ["eframe"] }
