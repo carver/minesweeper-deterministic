@@ -12,7 +12,6 @@
 - identify if a click was a guess that could not have been deduced. Possibly:
     - lose game
     - report when game is over as lucky
-- Start-up feels a little slow. Any options to speed it up?
 
 ## Claude's ideas
 
