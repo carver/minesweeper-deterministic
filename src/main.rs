@@ -4,16 +4,16 @@ use std::time::Instant;
 use minesweeper_deterministic::ui::{App, Startup, open_journal};
 
 const ICON: &[u8] = include_bytes!("../assets/icon.png");
-/// Set to `wgpu` to draw with wgpu instead of OpenGL.
+/// Set to `glow` to draw with OpenGL instead of wgpu.
 const RENDERER_VAR: &str = "MINESWEEPER_RENDERER";
 
 fn renderer() -> eframe::Renderer {
     match std::env::var(RENDERER_VAR).as_deref() {
-        Ok("wgpu") => eframe::Renderer::Wgpu,
-        Ok("glow") | Err(_) => eframe::Renderer::Glow,
+        Ok("glow") => eframe::Renderer::Glow,
+        Ok("wgpu") | Err(_) => eframe::Renderer::Wgpu,
         Ok(other) => {
-            eprintln!("{RENDERER_VAR}={other} not recognised, using glow");
-            eframe::Renderer::Glow
+            eprintln!("{RENDERER_VAR}={other} not recognised, using wgpu");
+            eframe::Renderer::Wgpu
         }
     }
 }
