@@ -16,7 +16,10 @@ you missed turn red. Luck never decides a game. Only mistakes do.
 - Left click on a number whose flags are all placed opens its other
   neighbours. Middle click does the same as left click.
 - Right click, or Ctrl/Shift/Alt with left click, toggles a flag.
-- The smiley starts a new game.
+- The smiley, N or F2 starts a new game. If you have opened or flagged
+  anything in an unfinished game, it asks first. Enter confirms, Esc keeps
+  playing.
+- H requests help.
 - **No extra automation** only floods open squares with no adjacent mines.
 - **Resolve local constraints** (the default) also flags and opens whatever a
   single number settles on its own. A wrong flag can then open a mine for

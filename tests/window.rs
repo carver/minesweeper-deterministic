@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use eframe::egui::{Event, Modifiers, PointerButton, vec2};
+use eframe::egui::{Event, Key, Modifiers, PointerButton, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use minesweeper_deterministic::board::Board;
@@ -179,13 +179,93 @@ fn switching_automation_resolves_the_board() {
     assert_eq!(h.state().game().status(), Status::Won);
 }
 
+fn dialog_open(h: &Harness<'static, App>) -> bool {
+    h.query_by_label("Keep playing").is_some()
+}
+
 #[test]
-fn smiley_starts_a_new_game() {
+fn smiley_on_a_fresh_board_starts_over_without_asking() {
+    let mut h = window("*../.../...", Automation::ZerosOnly);
+    h.get_by_label("New game").click();
+    h.step();
+    assert!(!dialog_open(&h));
+}
+
+#[test]
+fn smiley_mid_game_asks_first() {
     let mut h = window("*../.../...", Automation::ZerosOnly);
     click(&mut h, Pos::new(1, 1), PointerButton::Primary);
     h.get_by_label("New game").click();
     h.step();
+    assert!(dialog_open(&h));
+
+    h.get_by_label("Keep playing").click();
+    h.step();
+    h.step();
+    assert!(!dialog_open(&h));
+    assert_eq!(look(&h, 1, 1), Look::Number(1));
+
+    h.get_by_label("New game").click();
+    h.step();
+    h.get_by_label("Start new game").click();
+    h.step();
+    h.step();
+    assert!(!dialog_open(&h));
     assert_eq!(look(&h, 1, 1), Look::Covered);
+}
+
+#[test]
+fn board_ignores_clicks_while_asking() {
+    let mut h = window("*../.../...", Automation::ZerosOnly);
+    click(&mut h, Pos::new(1, 1), PointerButton::Primary);
+    h.key_press(Key::N);
+    h.step();
+    click(&mut h, Pos::new(2, 2), PointerButton::Primary);
+    assert_eq!(look(&h, 2, 2), Look::Covered);
+}
+
+#[test]
+fn n_and_f2_ask_escape_cancels_enter_confirms() {
+    let mut h = window("*../.../...", Automation::ZerosOnly);
+    click(&mut h, Pos::new(1, 1), PointerButton::Primary);
+    for key in [Key::N, Key::F2] {
+        h.key_press(key);
+        h.step();
+        assert!(dialog_open(&h), "{key:?} asks");
+        h.key_press(Key::Escape);
+        h.step();
+        h.step();
+        assert!(!dialog_open(&h), "escape cancels");
+        assert_eq!(look(&h, 1, 1), Look::Number(1));
+    }
+    h.key_press(Key::N);
+    h.step();
+    h.key_press(Key::Enter);
+    h.step();
+    h.step();
+    assert!(!dialog_open(&h));
+    assert_eq!(look(&h, 1, 1), Look::Covered);
+}
+
+#[test]
+fn finished_game_starts_over_without_asking() {
+    let mut h = window("*../.../...", Automation::ZerosOnly);
+    click(&mut h, Pos::new(1, 1), PointerButton::Primary);
+    click(&mut h, Pos::new(0, 0), PointerButton::Primary);
+    assert_eq!(h.state().game().status(), Status::Lost);
+    h.key_press(Key::N);
+    h.step();
+    assert!(!dialog_open(&h));
+    assert_eq!(h.state().game().status(), Status::Playing);
+}
+
+#[test]
+fn h_requests_help() {
+    let mut h = window("../../*.", Automation::ZerosOnly);
+    click(&mut h, Pos::new(0, 0), PointerButton::Primary);
+    settle(&mut h);
+    h.key_press(Key::H);
+    wait_until(&mut h, |h| h.state().game().help_granted());
 }
 
 /// Keeps saved values in memory, like eframe's file storage without the file.

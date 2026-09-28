@@ -34,6 +34,8 @@ pub struct App {
     grid: Option<GridLayout>,
     /// Reported once the first frame is drawn, then cleared.
     startup: Option<Startup>,
+    /// Asking whether to abandon the game in progress.
+    confirming_new_game: bool,
 }
 
 /// When the process started and when the renderer was ready, to find out
@@ -101,9 +103,14 @@ impl eframe::App for App {
             ui.add_space(4.0);
         });
         egui::Panel::bottom("hint").show(ui, |ui| {
-            ui.weak("Flag with right-click or Ctrl+click. Middle-click works like left-click.");
+            ui.weak("Flag: right-click or Ctrl+click.   Keys: N or F2 new game, H request help.");
         });
         egui::CentralPanel::default().show(ui, |ui| self.board(ui));
+        if self.confirming_new_game {
+            self.confirm_new_game(ui.ctx());
+        } else {
+            self.shortcuts(ui);
+        }
 
         if self.game.is_busy() {
             ui.ctx().request_repaint();
@@ -133,6 +140,7 @@ impl App {
             journal,
             grid: None,
             startup: None,
+            confirming_new_game: false,
         }
     }
 
@@ -225,6 +233,61 @@ impl App {
         }
     }
 
+    fn can_ask_for_help(&self) -> bool {
+        self.game.status() == Status::Playing && !self.working()
+    }
+
+    fn shortcuts(&mut self, ui: &Ui) {
+        let (new_game, help) = ui.input_mut(|i| {
+            let mut pressed = |key| i.consume_key(egui::Modifiers::NONE, key);
+            (
+                pressed(egui::Key::N) | pressed(egui::Key::F2),
+                pressed(egui::Key::H),
+            )
+        });
+        if new_game {
+            self.ask_for_new_game();
+        }
+        if help && self.can_ask_for_help() {
+            self.ask_for_help(ui.ctx());
+        }
+    }
+
+    /// Starts over at once unless that would throw away a game in progress.
+    fn ask_for_new_game(&mut self) {
+        if self.game.in_progress() {
+            self.confirming_new_game = true;
+        } else {
+            self.restart();
+        }
+    }
+
+    fn confirm_new_game(&mut self, ctx: &egui::Context) {
+        let (confirm, cancel) = ctx.input_mut(|i| {
+            (
+                i.consume_key(egui::Modifiers::NONE, egui::Key::Enter),
+                i.consume_key(egui::Modifiers::NONE, egui::Key::Escape),
+            )
+        });
+        let modal = egui::Modal::new(egui::Id::new("confirm-new-game")).show(ctx, |ui| {
+            ui.label("Abandon this game and start a new one?");
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                let start = ui.button("Start new game").clicked();
+                let keep = ui.button("Keep playing").clicked();
+                (start, keep)
+            })
+            .inner
+        });
+        let (start, keep) = modal.inner;
+        if start || confirm {
+            self.confirming_new_game = false;
+            self.restart();
+        } else if keep || cancel || modal.should_close() {
+            self.confirming_new_game = false;
+        }
+    }
+
     fn working(&self) -> bool {
         self.game.is_busy() || self.help.is_some()
     }
@@ -234,7 +297,7 @@ impl App {
             ui.label(format!("Mines left: {}", self.game.mines_left()));
             ui.add_space(8.0);
             if self.face_button(ui) {
-                self.restart();
+                self.ask_for_new_game();
             }
             ui.add_space(8.0);
 
@@ -256,9 +319,8 @@ impl App {
             }
             ui.add_space(8.0);
 
-            let can_ask = self.game.status() == Status::Playing && !self.working();
             if ui
-                .add_enabled(can_ask, egui::Button::new("Request help"))
+                .add_enabled(self.can_ask_for_help(), egui::Button::new("Request help"))
                 .clicked()
             {
                 self.ask_for_help(ui.ctx());
@@ -335,7 +397,7 @@ impl App {
     /// toggles a flag on press; left or middle opens or chords on release,
     /// on whatever square the pointer is over by then.
     fn handle_pointer(&mut self, ui: &Ui, grid: GridLayout) {
-        if self.game.status() != Status::Playing {
+        if self.game.status() != Status::Playing || self.confirming_new_game {
             self.held = None;
             return;
         }

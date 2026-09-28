@@ -268,6 +268,20 @@ fn help_waits_for_automation_to_finish() {
 }
 
 #[test]
+fn in_progress_once_something_is_opened_or_flagged() {
+    let mut g = game("*../.../...", Automation::ZerosOnly);
+    assert!(!g.in_progress());
+    g.toggle_flag(p(0, 0));
+    assert!(g.in_progress());
+    g.toggle_flag(p(0, 0));
+    click(&mut g, 1, 1);
+    assert!(g.in_progress());
+    click(&mut g, 0, 0);
+    assert_eq!(g.status(), Status::Lost);
+    assert!(!g.in_progress(), "a finished game is not in progress");
+}
+
+#[test]
 fn restart_keeps_settings_and_clears_state() {
     let mut g = Game::new(Config::EXPERT, Automation::ZerosOnly, Rng::seeded(9));
     g.toggle_flag(p(0, 0));

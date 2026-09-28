@@ -171,6 +171,12 @@ impl Game {
         self.config.mines as i64 - self.board.flag_count() as i64
     }
 
+    /// Still playing, and the player has opened or flagged something, so
+    /// starting over would throw work away.
+    pub fn in_progress(&self) -> bool {
+        self.status == Status::Playing && (self.board.revealed_count() > 0 || self.board.flag_count() > 0)
+    }
+
     pub fn help_granted(&self) -> bool {
         self.help_granted
     }
