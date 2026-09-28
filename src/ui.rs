@@ -30,17 +30,14 @@ pub struct App {
     help: Option<HelpTask>,
     /// `None` if it could not be opened or a write failed.
     journal: Option<Journal>,
+    /// Where the squares were last drawn, and their size.
+    grid: Option<(Rect, f32)>,
 }
 
 impl Default for App {
     fn default() -> Self {
-        Self {
-            game: Game::new(Config::EXPERT, Automation::default(), Rng::from_time()),
-            started: Instant::now(),
-            held: None,
-            help: None,
-            journal: open_journal(),
-        }
+        let game = Game::new(Config::EXPERT, Automation::default(), Rng::from_time());
+        Self::new(game, open_journal())
     }
 }
 
@@ -81,6 +78,27 @@ impl eframe::App for App {
 }
 
 impl App {
+    pub fn new(game: Game, journal: Option<Journal>) -> Self {
+        Self {
+            game,
+            started: Instant::now(),
+            held: None,
+            help: None,
+            journal,
+            grid: None,
+        }
+    }
+
+    pub fn game(&self) -> &Game {
+        &self.game
+    }
+
+    /// The centre of a square as last drawn, for driving the window in tests.
+    pub fn square_centre(&self, pos: Pos) -> Option<egui::Pos2> {
+        let (grid, side) = self.grid?;
+        Some(grid.min + vec2((pos.x as f32 + 0.5) * side, (pos.y as f32 + 0.5) * side))
+    }
+
     fn clock(&self) -> u64 {
         self.started.elapsed().as_millis() as u64
     }
@@ -190,6 +208,7 @@ impl App {
             Status::Playing if self.held.is_some() => Mood::Tense,
             Status::Playing => Mood::Happy,
         };
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "New game"));
         let pressed = response.is_pointer_button_down_on();
         paint::face(ui.painter(), rect, mood, pressed);
         response.clicked()
@@ -206,6 +225,7 @@ impl App {
         let grid_size = vec2(side * dims.width as f32, side * dims.height as f32);
         let (area, _) = ui.allocate_exact_size(available.size(), Sense::click_and_drag());
         let grid = Rect::from_center_size(area.center(), grid_size);
+        self.grid = Some((grid, side));
 
         let square_at = |p: egui::Pos2| {
             grid.contains(p).then(|| {
@@ -259,7 +279,10 @@ impl App {
                     pressed(PointerButton::Middle),
                 ],
                 released(PointerButton::Primary) || released(PointerButton::Middle),
-                i.modifiers.ctrl || i.modifiers.shift || i.modifiers.alt,
+                i.events.iter().any(|e| {
+                    matches!(e, egui::Event::PointerButton { button: PointerButton::Primary, pressed: true, modifiers, .. }
+                        if modifiers.ctrl || modifiers.shift || modifiers.alt)
+                }),
             )
         });
         let [primary, secondary, middle] = pressed;
