@@ -1,0 +1,9 @@
+#!/bin/sh
+# The steps of .github/workflows/ci.yml, for agents' commits (pre-commit runs it
+# when $AI_AGENT is set), except that the tests build in debug: CI's --release
+# build takes several minutes here. Slower than the pre-commit hook: clippy and the
+# tests rebuild on the shared mount.
+set -e
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
